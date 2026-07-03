@@ -59,7 +59,7 @@
   --mlami-shadow-sm:  0 1px 3px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.3);
   --mlami-shadow-md:  0 4px 12px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.3);
   --mlami-shadow-lg:  0 8px 32px rgba(0,0,0,0.6), 0 4px 12px rgba(0,0,0,0.4);
-  --mlami-shadow-glow: 0 0 24px hsla(28, 72%, 46%, 0.25);
+  --mlami-shadow-glow: 0 0 24px hsla(28, 72%, 46%, 0.35);
 
   /* Spacing */
   --mlami-space-1:  4px;
@@ -75,8 +75,8 @@
 /* Light mode overrides */
 :root[data-theme='light'] {
   --sl-color-accent-low:  hsl(28, 60%, 90%);
-  --sl-color-accent:      hsl(28, 72%, 40%);
-  --sl-color-accent-high: hsl(28, 60%, 28%);
+  --sl-color-accent:      hsl(28, 78%, 44%); /* Deepened for better contrast */
+  --sl-color-accent-high: hsl(28, 70%, 32%);
   --sl-color-gray-1:      hsl(24, 5%, 12%);
   --sl-color-gray-2:      hsl(24, 5%, 28%);
   --sl-color-gray-3:      hsl(24, 5%, 44%);
@@ -84,6 +84,8 @@
   --sl-color-gray-5:      hsl(24, 5%, 80%);
   --sl-color-gray-6:      hsl(24, 6%, 92%);
   --sl-color-black:       hsl(24, 4%, 98%);
+  
+  --mlami-shadow-glow:    0 0 24px hsla(28, 78%, 44%, 0.2);
 }
 
 /* ============================================================
@@ -94,6 +96,7 @@ h1, h2, h3 {
   font-weight: 400;
   letter-spacing: -0.02em;
   line-height: 1.2;
+  text-wrap: balance; /* Premium editorial typography */
 }
 
 h4, h5, h6 {
@@ -105,7 +108,7 @@ h4, h5, h6 {
 /* Page title */
 .sl-markdown-content h1:first-child {
   font-size: var(--sl-text-4xl);
-  background: linear-gradient(135deg, var(--sl-color-white) 0%, var(--sl-color-gray-2) 100%);
+  background: linear-gradient(135deg, var(--sl-color-white) 0%, var(--sl-color-gray-3) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -128,7 +131,7 @@ h4, h5, h6 {
 /* Lead paragraph */
 .sl-markdown-content > p:first-of-type {
   font-size: var(--sl-text-lg);
-  color: var(--sl-color-gray-2);
+  color: var(--sl-color-gray-1); /* Slightly brighter for lead */
   line-height: 1.75;
 }
 
@@ -143,14 +146,16 @@ h4, h5, h6 {
    ============================================================ */
 .sl-markdown-content a:not(.not-content) {
   color: var(--sl-color-accent-high);
-  text-decoration: none;
-  border-bottom: 1px solid transparent;
-  transition: border-color 0.15s ease, color 0.15s ease;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 4px;
+  text-decoration-thickness: 1px;
+  transition: text-decoration-color 0.2s ease, color 0.2s ease;
 }
 
 .sl-markdown-content a:not(.not-content):hover {
   color: var(--sl-color-white);
-  border-bottom-color: var(--sl-color-accent);
+  text-decoration-color: var(--sl-color-accent);
 }
 
 /* ============================================================
@@ -184,6 +189,7 @@ h4, h5, h6 {
   box-shadow: var(--mlami-shadow-sm);
   margin: var(--mlami-space-6) 0;
   font-size: var(--sl-text-sm);
+  background: var(--sl-color-black); /* Clean grounding */
 }
 
 .sl-markdown-content thead {
@@ -206,14 +212,16 @@ h4, h5, h6 {
   border-bottom: 1px solid var(--sl-color-gray-6);
   color: var(--sl-color-gray-2);
   vertical-align: top;
+  transition: background 0.15s ease;
 }
 
 .sl-markdown-content tr:last-child td {
   border-bottom: none;
 }
 
-.sl-markdown-content tbody tr:hover {
-  background: hsla(28, 10%, 50%, 0.05);
+.sl-markdown-content tbody tr:hover td {
+  background: hsla(28, 20%, 50%, 0.08); /* Increased visibility */
+  color: var(--sl-color-gray-1);
 }
 
 /* ============================================================
@@ -221,7 +229,7 @@ h4, h5, h6 {
    ============================================================ */
 .sl-markdown-content blockquote {
   border-left: 3px solid var(--sl-color-accent);
-  background: hsla(28, 30%, 40%, 0.08);
+  background: linear-gradient(90deg, hsla(28, 30%, 40%, 0.12) 0%, transparent 100%);
   border-radius: 0 var(--mlami-radius-md) var(--mlami-radius-md) 0;
   padding: var(--mlami-space-4) var(--mlami-space-6);
   margin: var(--mlami-space-6) 0;
@@ -272,7 +280,7 @@ nav[aria-label="Main"] .group-label span {
 /* Sidebar items */
 nav[aria-label="Main"] a {
   border-radius: var(--mlami-radius-md);
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
   font-size: 0.875rem;
 }
 
@@ -285,6 +293,7 @@ nav[aria-label="Main"] a[aria-current="page"] {
   background: hsla(28, 72%, 46%, 0.15);
   color: var(--sl-color-accent-high);
   border-left: 2px solid var(--sl-color-accent);
+  box-shadow: inset 24px 0 24px -24px var(--sl-color-accent); /* Subtle inner glow */
 }
 
 /* ============================================================
@@ -304,11 +313,12 @@ site-search button[data-open-modal] {
   border-radius: var(--mlami-radius-md);
   border: 1px solid var(--sl-color-gray-5);
   background: var(--sl-color-gray-6);
-  transition: border-color 0.15s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 site-search button[data-open-modal]:hover {
   border-color: var(--sl-color-accent);
+  box-shadow: 0 0 0 1px var(--sl-color-accent);
 }
 
 /* ============================================================
@@ -323,6 +333,7 @@ site-search button[data-open-modal]:hover {
   color: var(--sl-color-gray-2);
   max-width: 40rem;
   line-height: 1.75;
+  text-wrap: balance;
 }
 
 /* ============================================================
@@ -331,12 +342,13 @@ site-search button[data-open-modal]:hover {
 .pagination-links a {
   border-radius: var(--mlami-radius-md);
   border: 1px solid var(--sl-color-gray-5);
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
 }
 
 .pagination-links a:hover {
   border-color: var(--sl-color-accent);
   background: hsla(28, 72%, 46%, 0.08);
+  transform: translateY(-1px);
 }
 
 /* ============================================================
@@ -353,7 +365,7 @@ site-search button[data-open-modal]:hover {
 starlight-toc nav a {
   font-size: var(--sl-text-xs);
   color: var(--sl-color-gray-3);
-  transition: color 0.15s ease;
+  transition: color 0.15s ease, border-color 0.15s ease;
   border-left: 2px solid transparent;
   padding-left: 0.75rem;
 }
@@ -378,29 +390,19 @@ starlight-toc nav a[aria-current="true"] {
 
 /* ============================================================
    16. MLAMI COMPONENT DESIGN TOKENS
-   (used by React components in src/components/)
    ============================================================ */
 :root {
-  /* Feature cards */
   --card-bg:           hsla(24, 5%, 12%, 0.8);
   --card-border:       var(--sl-color-gray-5);
   --card-border-hover: var(--sl-color-accent);
   --card-radius:       var(--mlami-radius-xl);
-
-  /* Metric cards */
   --metric-accent:     var(--sl-color-accent-high);
   --metric-bg:         hsla(28, 30%, 20%, 0.15);
-
-  /* Placeholder components */
   --placeholder-bg:    hsla(24, 5%, 14%, 0.6);
   --placeholder-border: var(--sl-color-gray-5);
   --placeholder-text:  var(--sl-color-gray-3);
-
-  /* Timeline */
   --timeline-line:     var(--sl-color-gray-5);
   --timeline-node:     var(--sl-color-accent);
-
-  /* Security checklist */
   --check-color:       hsl(142, 60%, 45%);
   --check-bg:          hsla(142, 60%, 45%, 0.1);
 }
@@ -452,12 +454,10 @@ starlight-toc nav a[aria-current="true"] {
 }
 
 /* ============================================================
-   21. RESPONSIVE GRID OVERRIDES (for MDX component grids)
+   21. RESPONSIVE GRID OVERRIDES
    ============================================================ */
 @media (max-width: 60rem) {
-  .mlami-feature-grid--3col {
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-  }
+  .mlami-feature-grid--3col,
   .mlami-metric-grid--4col {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
@@ -476,7 +476,6 @@ starlight-toc nav a[aria-current="true"] {
 /* ============================================================
    22. HOMEPAGE SPLASH ENHANCEMENTS
    ============================================================ */
-/* Hero section on splash pages */
 [data-has-hero] .hero {
   background: radial-gradient(ellipse 80% 60% at 50% -10%, hsla(28, 60%, 30%, 0.25) 0%, transparent 70%);
   border-bottom: 1px solid var(--sl-color-gray-6);
@@ -485,13 +484,14 @@ starlight-toc nav a[aria-current="true"] {
 
 [data-has-hero] .hero h1 {
   font-family: 'DM Serif Display', serif;
-  font-size: clamp(2rem, 5vw, 3.5rem);
+  font-size: clamp(2.5rem, 6vw, 4rem); /* Slightly more dynamic scaling */
   font-weight: 400;
   letter-spacing: -0.03em;
   background: linear-gradient(135deg, var(--sl-color-white) 30%, var(--sl-color-accent-high) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+  text-wrap: balance;
 }
 
 /* Hero action buttons */
@@ -501,12 +501,13 @@ starlight-toc nav a[aria-current="true"] {
   color: white !important;
   font-weight: 600;
   border-radius: var(--mlami-radius-md) !important;
-  transition: opacity 0.15s ease, transform 0.15s ease !important;
+  transition: opacity 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease !important;
 }
 
 [data-has-hero] .hero .action-primary:hover {
-  opacity: 0.9;
+  opacity: 0.95;
   transform: translateY(-1px);
+  box-shadow: var(--mlami-shadow-glow); /* The ember glow applied */
 }
 
 /* ============================================================

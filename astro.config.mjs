@@ -16,7 +16,7 @@ export default defineConfig({
         alt: 'Mlami BBQ',
         replacesTitle: true,
       },
-      favicon: '/favicon.svg',
+      favicon: '/favicon.ico',
       head: [
         {
           tag: 'link',
@@ -43,7 +43,7 @@ export default defineConfig({
       ],
       customCss: ['./src/styles/global.css'],
       social: {
-        github: 'https://github.com/mlamibbq',
+        github: 'https://github.com/Nigiddy',
       },
       editLink: {
         baseUrl: 'https://github.com/mlamibbq/docs/edit/main/',

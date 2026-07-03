@@ -5,119 +5,97 @@ sidebar:
   order: 1
 ---
 
+import { Card, CardGrid, Aside } from '@astrojs/starlight/components';
 
-**Mlami BBQ** is a full-stack restaurant management platform built for an authentic Kenyan BBQ restaurant. It is simultaneously a customer-facing ordering website and an internal operations system for all restaurant staff.
-
----
-
-## Business Problem
-
-Running a busy BBQ restaurant involves several overlapping challenges that manual processes and generic POS systems cannot address well:
-
-| Problem | Impact Without a System |
-|---------|------------------------|
-| Customers cannot browse the menu or pay digitally | Lost revenue, long queues, poor experience |
-| Kitchen staff have no live view of incoming orders | Missed orders, customer complaints |
-| Payments via M-Pesa require manual reconciliation | Accounting errors, fraud risk |
-| Admin has no financial visibility | No data-driven decisions |
-| Multiple staff types need different system access | Security and operational risk |
-| Reservations and customer contact management is ad-hoc | Lost bookings, missed follow-ups |
-
-Mlami BBQ solves every one of these problems in a single, cohesive platform.
+**Mlami BBQ** is a full-stack restaurant management platform tailored specifically for an authentic Kenyan BBQ restaurant. More than just a point-of-sale, it serves as both a frictionless, customer-facing ordering web app and a centralized, real-time operations engine for the entire restaurant staff.
 
 ---
 
-## Target Users
+## The Business Problem
 
-### 1. Customers (Public)
-- Browse the full menu with categories, prices, and availability
-- Add items to cart
-- Pay with M-Pesa STK Push from their phone
-- Make table reservations online
-- Send contact enquiries
+Running a high-volume BBQ restaurant involves overlapping challenges that manual processes and generic POS systems fail to address effectively. Mlami BBQ was built to solve these specific friction points:
 
-### 2. Kitchen Cooks
-- See incoming orders in real-time with sound alerts
-- Update order status (Pending → Preparing → Ready → Completed)
-- Manage menu item stock/availability
-- Generate QR codes for tables
-
-### 3. Waiters
-- Record manual sales (cash, card, bank transfer, manual M-Pesa)
-- View personal sales history
-- See all orders
-
-### 4. Admin
-- Full access to everything above
-- Financial dashboard (revenue, expenses, refunds)
-- Export financial reports (CSV, PDF, JSON)
-- User management and role assignment
-- Manage reservations and contact messages
-- M-Pesa reconciliation panel
-- Add/edit/remove menu items
+| The Friction | Business Impact | The Mlami BBQ Solution |
+| :--- | :--- | :--- |
+| **No digital menu or payments** | Lost revenue, long queues, poor experience | Mobile-first ordering with instant M-Pesa STK push. |
+| **Kitchen blind spots** | Missed orders, customer complaints | Real-time, screen-based kitchen dashboard with audio alerts. |
+| **Manual M-Pesa tracking** | Accounting errors, high fraud risk | Fully automated Webhook/RPC reconciliation. |
+| **Zero financial visibility** | Ad-hoc, non-data-driven decisions | Comprehensive admin dashboard with exportable reporting. |
+| **Shared generic accounts** | Severe security and operational risks | Strict Role-Based Access Control (RBAC) per staff type. |
+| **Lost reservations** | Missed bookings, no customer follow-up | Centralized reservation and contact management. |
 
 ---
 
-## Core Features
+## Target Users & Roles
 
-### Customer-Facing
-- ✅ Animated home page with hero, popular dishes, and about section
-- ✅ Full menu page with category filtering and stock indicators
-- ✅ Shopping cart with quantity management
-- ✅ M-Pesa STK Push checkout flow
-- ✅ Table reservation form (stored + email notification)
-- ✅ Contact form (stored + email notification)
-- ✅ Privacy policy and terms of service pages
-- ✅ Progressive Web App (installable, offline-capable)
-- ✅ Fully responsive (mobile-first design)
+By implementing strict RBAC, the platform provides tailored interfaces and permissions for four distinct user journeys.
 
-### Operations (Admin Panel at `/admin`)
-- ✅ Real-time orders view with live status updates and sound notifications
-- ✅ Kitchen dashboard (cook-specific, order card workflow)
-- ✅ Inventory (stock toggle per menu item)
-- ✅ QR code generator for tables
-- ✅ Financial dashboard (revenue/expense/profit tracking)
-- ✅ Manual sales recording (cash, card, bank transfer, M-Pesa)
-- ✅ Refund processing with audit trail
-- ✅ Data export (CSV via Edge Function, PDF, JSON, text report)
-- ✅ M-Pesa reconciliation panel
-- ✅ User management with role assignment
-- ✅ Contact messages inbox
-- ✅ Reservations list
-- ✅ Waiter personal sales history
+<CardGrid stagger>
+  <Card title="Customers (Public)" icon="laptop">
+    - Browse the live menu with stock indicators.
+    - Seamless checkout via M-Pesa STK Push.
+    - Submit online table reservations.
+    - Progressive Web App (PWA) for offline-capable mobile access.
+  </Card>
+  <Card title="Kitchen Cooks" icon="approve-check-circle">
+    - Real-time incoming order feeds with sound alerts.
+    - Drag-and-drop order status (Pending → Preparing → Ready).
+    - Manage live item availability/86'ing.
+    - Generate QR codes for table routing.
+  </Card>
+  <Card title="Wait Staff" icon="list-format">
+    - Record manual sales (cash, card, manual M-Pesa).
+    - View global active orders.
+    - Track personal shift sales history and performance.
+  </Card>
+  <Card title="Administrators" icon="setting">
+    - Full system override access.
+    - Real-time financial dashboard (revenue, refunds, profit).
+    - M-Pesa reconciliation and audit trails.
+    - Data exports (CSV, PDF, JSON).
+  </Card>
+</CardGrid>
 
 ---
 
-## Overall Workflow
+## Core Infrastructure
+
+<Aside type="tip" title="Built for Speed">
+  The customer-facing application is fully responsive, code-split, and heavily cached using React Query to ensure zero layout shift and instant menu browsing, even on spotty 3G networks.
+</Aside>
+
+### 1. The Customer Interface
+*   **Animated Landing:** Dynamic hero section, popular dishes, and restaurant lore.
+*   **Intelligent Cart:** Quantity management that respects live backend inventory.
+*   **Integrated Checkout:** Daraja API integrated M-Pesa checkout flow.
+*   **Communication:** Reservation and contact forms tied to automated email notifications.
+
+### 2. The Operations Hub (`/admin`)
+*   **Live Order Pipeline:** Supabase Realtime-powered order ingestion.
+*   **Granular Inventory:** Single-click stock toggles that instantly update the public menu.
+*   **Financial Engine:** Shift management, manual transaction overrides, and secure refund processing.
+*   **User Management:** Centralized dashboard for assigning staff roles and managing access.
+
+---
+
+## The Payment Workflow
+
+The entire M-Pesa checkout flow is fully automated, removing the need for cashiers to verify SMS messages manually.
 
 ```mermaid
 flowchart TD
     A[Customer visits mlamibbq.com] --> B[Browses menu]
     B --> C[Adds items to cart]
-    C --> D[Enters phone number + table number]
+    C --> D[Enters phone & table number]
     D --> E[Clicks Pay with M-Pesa]
     E --> F[Frontend → mpesa-stk-push Edge Function]
     F --> G[Daraja API sends STK Push to phone]
-    G --> H{Customer approves payment?}
+    G --> H{Customer approves?}
     H -- Yes --> I[Safaricom POSTs to mpesa-callback Edge Function]
     H -- No --> J[Transaction marked FAILED]
     I --> K[complete_mpesa_payment RPC called atomically]
-    K --> L[Transaction marked COMPLETED + Order created]
-    L --> M[Supabase Realtime broadcasts order INSERT]
-    M --> N[Kitchen Dashboard shows new order with sound alert]
-    N --> O[Cook updates order status]
-    O --> P[Financial trigger records revenue automatically]
-```
-
----
-
-## Non-Functional Goals
-
-| Goal | How It Is Achieved |
-|------|--------------------|
-| **Security** | RLS, RBAC, HMAC callback verification, IP allowlist, rate limiting, CSP headers |
-| **Reliability** | Idempotent payments, atomic RPCs, background reconciliation job |
-| **Performance** | Code splitting, lazy loading, React Query caching, PWA, Brotli/Gzip compression |
-| **Scalability** | Stateless Edge Functions, Supabase managed infra, distributed Redis rate limiting |
-| **Maintainability** | TypeScript throughout, modular architecture, centralized permissions library |
-| **Observability** | Sentry error tracking, structured JSON logging in Edge Functions, Vercel Analytics |
+    K --> L[Transaction COMPLETED + Order Created]
+    L --> M[Supabase Realtime broadcasts INSERT]
+    M --> N[Kitchen Dashboard updates with sound alert]
+    N --> O[Cook updates status]
+    O --> P[Revenue recorded automatically]
