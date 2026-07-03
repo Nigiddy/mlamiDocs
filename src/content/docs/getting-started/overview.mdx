@@ -6,6 +6,12 @@ sidebar:
 ---
 
 import { Card, CardGrid, Aside } from '@astrojs/starlight/components';
+import ImageGallery from '../../../components/ui/ImageGallery.astro';
+import financialDash from '../../../assets/screenshots/financialDash.webp';
+import herSec from '../../../assets/screenshots/herSec.webp';
+import popularDish from '../../../assets/screenshots/popularDish.webp';
+import qrCode from '../../../assets/screenshots/qrCode.webp';
+import reserv from '../../../assets/screenshots/reserv.webp';
 
 **Mlami BBQ** is a full-stack restaurant management platform tailored specifically for an authentic Kenyan BBQ restaurant. More than just a point-of-sale, it serves as both a frictionless, customer-facing ordering web app and a centralized, real-time operations engine for the entire restaurant staff.
 
@@ -35,22 +41,19 @@ By implementing strict RBAC, the platform provides tailored interfaces and permi
     - Browse the live menu with stock indicators.
     - Seamless checkout via M-Pesa STK Push.
     - Submit online table reservations.
-    - Progressive Web App (PWA) for offline-capable mobile access.
   </Card>
   <Card title="Kitchen Cooks" icon="approve-check-circle">
     - Real-time incoming order feeds with sound alerts.
-    - Drag-and-drop order status (Pending → Preparing → Ready).
+    - Drag-and-drop order status.
     - Manage live item availability/86'ing.
-    - Generate QR codes for table routing.
   </Card>
   <Card title="Wait Staff" icon="list-format">
-    - Record manual sales (cash, card, manual M-Pesa).
+    - Record manual sales (cash, card).
     - View global active orders.
-    - Track personal shift sales history and performance.
+    - Track personal shift sales history.
   </Card>
   <Card title="Administrators" icon="setting">
-    - Full system override access.
-    - Real-time financial dashboard (revenue, refunds, profit).
+    - Real-time financial dashboard.
     - M-Pesa reconciliation and audit trails.
     - Data exports (CSV, PDF, JSON).
   </Card>
@@ -75,6 +78,43 @@ By implementing strict RBAC, the platform provides tailored interfaces and permi
 *   **Granular Inventory:** Single-click stock toggles that instantly update the public menu.
 *   **Financial Engine:** Shift management, manual transaction overrides, and secure refund processing.
 *   **User Management:** Centralized dashboard for assigning staff roles and managing access.
+
+---
+
+## Visual Tour
+
+A look at the distinct interfaces powering both the customer experience and the restaurant operations.
+
+<ImageGallery 
+  images={[
+    {
+      src: herSec,
+      alt: "Mlami BBQ landing page hero section",
+      caption: "Customer landing page hero with the restaurant identity front and center.",
+    },
+    {
+      src: popularDish,
+      alt: "Popular dishes section on the Mlami BBQ customer site",
+      caption: "Popular dishes section used to guide guests into ordering quickly.",
+    },
+    {
+      src: reserv,
+      alt: "Reservation request form in the customer experience",
+      caption: "Reservation flow for collecting booking details and special requests.",
+    },
+    {
+      src: qrCode,
+      alt: "Admin QR code generator for table routing",
+      caption: "QR code generator for table-specific menu entry points.",
+    },
+    {
+      src: financialDash,
+      alt: "Admin financial dashboard with revenue and profit widgets",
+      caption: "Admin financial dashboard with operational revenue visibility.",
+    },
+  ]}
+  columns={2}
+/>
 
 ---
 

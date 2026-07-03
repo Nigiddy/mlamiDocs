@@ -6,6 +6,9 @@ sidebar:
 ---
 
 
+import ImageGallery from '../../../components/ui/ImageGallery.astro';
+import financialDash from '../../../assets/screenshots/financialDash.webp';
+
 ## Overview
 
 The financial module provides complete visibility into restaurant revenue, expenses, and profitability. It is **admin-only** and tracks three types of financial events:
@@ -15,6 +18,18 @@ The financial module provides complete visibility into restaurant revenue, expen
 3. **Refunds** — recorded by admin, deducted from net profit
 
 All amounts are stored as **integer cents** and displayed as `KES X.XX`.
+
+<ImageGallery
+  title="Financial Module Interface"
+  images={[
+    {
+      src: financialDash,
+      alt: "Mlami BBQ financial module with KPI cards, charts, and transaction feed",
+      caption: "The dashboard combines revenue, expense, refund, reconciliation, and export workflows for administrators.",
+    },
+  ]}
+  columns={1}
+/>
 
 ---
 

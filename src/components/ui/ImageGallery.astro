@@ -1,0 +1,145 @@
+---
+import { Image } from 'astro:assets';
+
+type GalleryImage = string | ImageMetadata;
+type GalleryItem = GalleryImage | {
+  src: GalleryImage;
+  alt?: string;
+  caption?: string;
+};
+type RichGalleryItem = {
+  src: GalleryImage;
+  alt?: string;
+  caption?: string;
+};
+type NormalizedGalleryItem = {
+  src: GalleryImage;
+  alt: string;
+  caption?: string;
+};
+
+interface Props {
+  title: string;
+  images: GalleryItem[];
+  columns?: number;
+  gap?: string;
+  classes?: {
+    grid?: string;
+    image?: string;
+  }
+}
+
+const { 
+  title, 
+  images, 
+  columns = 3,
+  gap = '1rem',
+  classes = {},
+} = Astro.props;
+
+const isRichGalleryItem = (image: GalleryItem): image is RichGalleryItem =>
+  typeof image === 'object' && !('width' in image);
+
+const normalizedImages: NormalizedGalleryItem[] = images.map((image) => {
+  if (isRichGalleryItem(image)) {
+    return {
+      src: image.src,
+      alt: image.alt ?? image.caption ?? title,
+      caption: image.caption,
+    };
+  }
+
+  return {
+    src: image,
+    alt: title,
+    caption: undefined,
+  };
+});
+
+const gridStyles = `
+  display: grid;
+  grid-template-columns: repeat(${columns}, minmax(0, 1fr));
+  gap: ${gap};
+  margin-top: 1.5rem;
+`;
+---
+
+<div class="image-gallery-container">
+  <h3>{title}</h3>
+  <div class:list={["image-gallery-grid", classes.grid]} style={gridStyles}>
+    {normalizedImages.map(({ src, alt, caption }) => (
+      <figure class="gallery-card">
+        {typeof src === 'string' ? (
+          <img 
+            src={src} 
+            alt={alt} 
+            class:list={["gallery-image", classes.image]}
+            loading="lazy"
+          />
+        ) : (
+          <Image 
+            src={src}
+            alt={alt}
+            class:list={["gallery-image", classes.image]}
+            loading="lazy"
+          />
+        )}
+        {caption && <figcaption>{caption}</figcaption>}
+      </figure>
+    ))}
+  </div>
+</div>
+
+<style>
+  .image-gallery-container {
+    margin: var(--mlami-space-8) 0;
+  }
+
+  .image-gallery-container h3 {
+    margin-top: 0;
+  }
+
+  .gallery-card {
+    overflow: hidden;
+    margin: 0;
+    border: 1px solid var(--sl-color-gray-5);
+    border-radius: var(--mlami-radius-lg);
+    background: var(--sl-color-black);
+    box-shadow: var(--mlami-shadow-md);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+  }
+
+  .gallery-card:hover {
+    border-color: var(--sl-color-accent);
+    box-shadow: var(--mlami-shadow-lg);
+    transform: translateY(-2px);
+  }
+
+  .gallery-image {
+    display: block;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+  }
+
+  figcaption {
+    border-top: 1px solid var(--sl-color-gray-6);
+    padding: var(--mlami-space-3) var(--mlami-space-4);
+    color: var(--sl-color-gray-2);
+    font-size: var(--sl-text-sm);
+    line-height: 1.5;
+  }
+
+  @media (max-width: 64rem) {
+    .image-gallery-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+  }
+
+  @media (max-width: 42rem) {
+    .image-gallery-grid {
+      grid-template-columns: 1fr !important;
+    }
+  }
+</style>

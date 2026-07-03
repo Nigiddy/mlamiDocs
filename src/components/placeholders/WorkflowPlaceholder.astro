@@ -9,7 +9,7 @@ const { steps = 4, caption = 'Workflow diagram · coming soon' } = Astro.props;
 <div class="workflow-placeholder">
   <div class="workflow-steps">
     {Array.from({ length: steps }).map((_, i) => (
-      <div class="workflow-step" key={i}>
+      <div class="workflow-step">
         <div class="step-node">{i + 1}</div>
         {i < steps - 1 && <div class="step-arrow">→</div>}
       </div>

@@ -6,6 +6,11 @@ sidebar:
 ---
 
 
+import ImageGallery from '../../../components/ui/ImageGallery.astro';
+import financialDash from '../../../assets/screenshots/financialDash.webp';
+import qrCode from '../../../assets/screenshots/qrCode.webp';
+import reserv from '../../../assets/screenshots/reserv.webp';
+
 ## Overview
 
 All staff access the admin panel at `/admin`. The panel is a single-page application with a sidebar navigation and main content area. The sidebar dynamically shows only the views the logged-in user's role allows.
@@ -100,6 +105,18 @@ Sounds are generated programmatically via the Web Audio API in `src/lib/kitchenS
 **File:** `src/components/admin/FinancialDashboard.tsx`  
 **See also:** [Financial Module](./11-financial-module.md) for full details.
 
+<ImageGallery
+  title="Financial Dashboard Preview"
+  images={[
+    {
+      src: financialDash,
+      alt: "Financial dashboard showing revenue, expenses, net profit, charts, and transactions",
+      caption: "The admin-only financial dashboard surfaces KPI cards, trend charts, export actions, and transaction history in one view.",
+    },
+  ]}
+  columns={1}
+/>
+
 ### Period Filters
 - Daily, Weekly, Monthly (default), Yearly
 
@@ -153,6 +170,18 @@ Simple toggle-based interface showing all menu items with an in-stock/out-of-sto
 
 Generates QR codes for each table. When scanned, QR codes can direct customers to the menu with the table number pre-populated. Codes can be downloaded as PNG for printing.
 
+<ImageGallery
+  title="Table QR Code Generator"
+  images={[
+    {
+      src: qrCode,
+      alt: "Admin QR code generator for restaurant tables",
+      caption: "Staff can generate and download printable table QR codes from the admin interface.",
+    },
+  ]}
+  columns={1}
+/>
+
 ---
 
 ## User Management
@@ -168,6 +197,18 @@ Admin-only view showing all registered users and their roles. Provides the abili
 **File:** `src/components/admin/ReservationsList.tsx`
 
 Admin-only list of all table reservation requests. Shows name, email, phone, date, time, guest count, and special requests. Supports marking reservations as confirmed/cancelled.
+
+<ImageGallery
+  title="Reservation Management"
+  images={[
+    {
+      src: reserv,
+      alt: "Customer reservation form for table bookings",
+      caption: "Reservation requests originate from the customer form and are managed by admins from the operations panel.",
+    },
+  ]}
+  columns={1}
+/>
 
 ---
 
