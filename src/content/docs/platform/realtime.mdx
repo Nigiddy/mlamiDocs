@@ -14,13 +14,6 @@ Mlami BBQ uses **Supabase Realtime** to broadcast live order updates to the Kitc
 
 ## How Supabase Realtime Works
 
-```mermaid
-graph LR
-    A[PostgreSQL orders table] -->|WAL Logical Replication| B[Supabase Realtime Server]
-    B -->|Phoenix WebSocket Protocol| C[Supabase Client in Browser]
-    C -->|useKitchenRealtime hook| D[React Query Cache Invalidation]
-    D --> E[CookDashboard re-renders]
-```
 
 Supabase Realtime uses **Postgres Change Data Capture (CDC)** via PostgreSQL's Write-Ahead Log (WAL). Every INSERT, UPDATE, and DELETE on subscribed tables is streamed to connected clients in real-time via WebSocket.
 

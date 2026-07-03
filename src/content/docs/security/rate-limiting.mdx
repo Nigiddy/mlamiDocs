@@ -18,28 +18,6 @@ Edge Functions are **stateless and ephemeral**. Each function invocation is a se
 
 **Upstash Redis** solves this by providing a serverless, globally distributed Redis instance. All function instances write to the same Redis store, so rate limit counters are shared across all concurrent invocations.
 
-```mermaid
-graph TD
-    subgraph "Client Requests"
-        R1[Request A<br/>IP: 1.2.3.4]
-        R2[Request B<br/>IP: 1.2.3.4]
-        R3[Request C<br/>IP: 1.2.3.4]
-    end
-
-    subgraph "Edge Function Instances (isolated)"
-        F1[Instance 1]
-        F2[Instance 2]
-        F3[Instance 3]
-    end
-
-    subgraph "Upstash Redis"
-        RL[ratelimit:mpesa-stk-push-ip:1.2.3.4<br/>counter: 3]
-    end
-
-    R1 --> F1 --> RL
-    R2 --> F2 --> RL
-    R3 --> F3 --> RL
-```
 
 ---
 
@@ -169,28 +147,8 @@ try {
 
 **Rationale:** The business impact of dropping legitimate customer payments (because Redis is down) is worse than temporarily allowing more traffic. The underlying Daraja API has its own rate limits as a secondary protection layer.
 
----
 
-## Request Lifecycle with Rate Limiting
 
-```mermaid
-flowchart TD
-    A[Incoming Request] --> B[Extract Client IP]
-    B --> C{Redis Available?}
-    C -- No --> D[Fail Open: Allow]
-    C -- Yes --> E[Check IP Sliding Window Counter]
-    E --> F{Limit Exceeded?}
-    F -- Yes --> G[Return 429 with Retry-After]
-    F -- No --> H{Phone Rate Limit applies?}
-    H -- No --> I[Process Request]
-    H -- Yes --> J[Extract Phone Number]
-    J --> K[Check Phone Sliding Window Counter]
-    K --> L{Phone Limit Exceeded?}
-    L -- Yes --> M[Return 429 with Retry-After]
-    L -- No --> I
-```
-
----
 
 ## Configuration
 

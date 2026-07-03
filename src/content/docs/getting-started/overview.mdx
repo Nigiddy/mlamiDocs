@@ -82,20 +82,3 @@ By implementing strict RBAC, the platform provides tailored interfaces and permi
 
 The entire M-Pesa checkout flow is fully automated, removing the need for cashiers to verify SMS messages manually.
 
-```mermaid
-flowchart TD
-    A[Customer visits mlamibbq.com] --> B[Browses menu]
-    B --> C[Adds items to cart]
-    C --> D[Enters phone & table number]
-    D --> E[Clicks Pay with M-Pesa]
-    E --> F[Frontend → mpesa-stk-push Edge Function]
-    F --> G[Daraja API sends STK Push to phone]
-    G --> H{Customer approves?}
-    H -- Yes --> I[Safaricom POSTs to mpesa-callback Edge Function]
-    H -- No --> J[Transaction marked FAILED]
-    I --> K[complete_mpesa_payment RPC called atomically]
-    K --> L[Transaction COMPLETED + Order Created]
-    L --> M[Supabase Realtime broadcasts INSERT]
-    M --> N[Kitchen Dashboard updates with sound alert]
-    N --> O[Cook updates status]
-    O --> P[Revenue recorded automatically]

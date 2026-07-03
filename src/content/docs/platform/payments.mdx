@@ -15,51 +15,7 @@ The implementation is hardened for production with idempotency, atomic database 
 ---
 
 ## Architecture Overview
-
-```mermaid
-graph TB
-    subgraph "Frontend"
-        CS[mpesaService.ts<br/>initiateMpesaPayment()]
-    end
-
-    subgraph "Edge Functions"
-        EF1[mpesa-stk-push<br/>Initiates payment]
-        EF2[mpesa-callback<br/>Receives result]
-        EF3[mpesa-query-status<br/>Status polling]
-        EF4[mpesa-reconcile<br/>Background recovery]
-    end
-
-    subgraph "Database"
-        DB1[mpesa_transactions]
-        DB2[orders]
-        DB3[order_items]
-        RPC1[complete_mpesa_payment]
-        RPC2[fail_mpesa_payment]
-    end
-
-    subgraph "Safaricom"
-        D1[Daraja OAuth]
-        D2[STK Push API]
-        D3[STK Query API]
-        D4[Callback Delivery]
-    end
-
-    CS --> EF1
-    EF1 --> D1
-    EF1 --> D2
-    EF1 --> DB1
-    D4 --> EF2
-    EF2 --> RPC1
-    RPC1 --> DB1 & DB2 & DB3
-    CS --> EF3
-    EF3 --> D3
-    EF4 --> DB1
-    EF4 --> D3
-    EF4 --> RPC1 & RPC2
-```
-
 ---
-
 ## Edge Function: `mpesa-stk-push`
 
 **File:** `supabase/functions/mpesa-stk-push/index.ts`  

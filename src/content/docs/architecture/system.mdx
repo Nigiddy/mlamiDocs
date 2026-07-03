@@ -14,60 +14,6 @@ Mlami BBQ follows a **serverless, API-first architecture**. There is no dedicate
 
 ## High-Level Architecture Diagram
 
-```mermaid
-graph TB
-    subgraph "Browser / PWA"
-        R[React 18 SPA]
-        RQ[React Query Cache]
-        WS[WebSocket Client]
-    end
-
-    subgraph "Vercel CDN"
-        S[Static Assets<br/>index.html · JS chunks · CSS]
-        VH[Vercel Headers<br/>CSP · X-Frame-Options · Cache-Control]
-    end
-
-    subgraph "Supabase"
-        SB_AUTH[Auth Service<br/>JWT Tokens · Sessions]
-        SB_DB[PostgreSQL Database<br/>RLS · RPC · Triggers]
-        SB_RT[Realtime Engine<br/>WebSocket · Postgres CDC]
-        SB_ST[Object Storage<br/>Menu Images · WebP]
-        SB_EF[Edge Functions<br/>Deno Runtime]
-    end
-
-    subgraph "Edge Functions"
-        EF1[mpesa-stk-push]
-        EF2[mpesa-callback]
-        EF3[mpesa-query-status]
-        EF4[mpesa-reconcile]
-        EF5[export-financial-data]
-        EF6[send-contact-email]
-    end
-
-    subgraph "External Services"
-        DARAJA[Safaricom Daraja API<br/>M-Pesa STK Push]
-        REDIS[Upstash Redis<br/>Rate Limiting]
-        RESEND[Resend<br/>Email Delivery]
-        SENTRY[Sentry<br/>Error Tracking]
-        VERCEL_A[Vercel Analytics]
-    end
-
-    R -- "REST / PostgREST" --> SB_DB
-    R -- "JWT Auth" --> SB_AUTH
-    R -- "Storage URLs" --> SB_ST
-    R -- "functions.invoke()" --> SB_EF
-    R -- "WebSocket" --> SB_RT
-    SB_RT --> WS
-    WS --> RQ
-    SB_EF --> EF1 & EF2 & EF3 & EF4 & EF5 & EF6
-    EF1 & EF3 & EF4 --> DARAJA
-    EF1 & EF2 & EF3 & EF4 & EF5 --> REDIS
-    EF6 --> RESEND
-    EF2 --> SB_DB
-    R --> SENTRY
-    R --> VERCEL_A
-    S --> VH
-```
 
 ---
 
@@ -159,56 +105,11 @@ supabase/functions/
 
 ---
 
-## Data Flow: Payment
-
-```mermaid
-sequenceDiagram
-    actor Customer
-    participant FE as React Frontend
-    participant EF1 as mpesa-stk-push
-    participant DB as PostgreSQL
-    participant DAR as Daraja API
-    participant EF2 as mpesa-callback
-    participant RT as Supabase Realtime
-
-    Customer->>FE: Clicks "Pay with M-Pesa"
-    FE->>EF1: POST (phone, amount, items, idempotencyKey)
-    EF1->>EF1: Rate limit check (IP + Phone)
-    EF1->>DB: Server-side price validation
-    EF1->>DAR: GET OAuth token
-    EF1->>DAR: POST STK Push request
-    DAR-->>EF1: {CheckoutRequestID, MerchantRequestID}
-    EF1->>DB: INSERT mpesa_transactions (status=PENDING)
-    EF1-->>FE: {success: true, checkoutRequestId}
-    FE->>Customer: "Check your phone"
-
-    DAR->>EF2: POST callback (ResultCode=0)
-    EF2->>EF2: IP allowlist + HMAC validation
-    EF2->>DB: CALL complete_mpesa_payment() [atomic RPC]
-    DB->>DB: SELECT ... FOR UPDATE (lock row)
-    DB->>DB: CALL create_order() [creates order + items]
-    DB->>DB: UPDATE mpesa_transactions SET status=COMPLETED
-    DB-->>EF2: {already_completed: false, order_id: 42}
-    EF2-->>DAR: {ResultCode: 0} (acknowledge)
-    RT->>RT: Broadcast INSERT on orders table
-    RT-->>FE: New order event via WebSocket
-    FE->>FE: invalidateQueries(['orders']) → Kitchen re-renders
-```
 
 ---
 
 ## Realtime Architecture
 
-```mermaid
-graph LR
-    DB[PostgreSQL orders table] -->|Postgres CDC| RT[Supabase Realtime Engine]
-    RT -->|WebSocket| HK[useKitchenRealtime hook]
-    HK -->|invalidateQueries| RQ[React Query Cache]
-    RQ -->|re-fetch| DB
-    RQ --> CD[CookDashboard re-renders]
-    HK -->|playChime| AUDIO[Browser Audio API]
-    HK -->|toast| UI[Toast notification]
-```
 
 The `useKitchenRealtime` hook subscribes to **both INSERT and UPDATE events** on the `orders` table. It uses a **2.5-second debounce** window to batch rapid state changes before triggering React Query cache invalidation, preventing excessive re-renders.
 
@@ -216,43 +117,11 @@ The `useKitchenRealtime` hook subscribes to **both INSERT and UPDATE events** on
 
 ---
 
-## Security Architecture
 
-```mermaid
-graph TB
-    subgraph "Browser"
-        CSP[Content-Security-Policy Headers]
-        XFO[X-Frame-Options: DENY]
-        RP[Referrer-Policy: strict-origin]
-    end
-
-    subgraph "API Layer"
-        RL[Redis Rate Limiting<br/>Per-IP · Per-Phone]
-        CORS[CORS Allowlist<br/>mlamibbq.com only]
-        IP_AL[Safaricom IP Allowlist<br/>12 production IPs]
-        HMAC[HMAC-SHA256 Signature Verification<br/>Callback authenticity]
-    end
-
-    subgraph "Database"
-        RLS[Row-Level Security<br/>Every table]
-        RBAC[has_role() function<br/>SECURITY DEFINER]
-        SD[SECURITY DEFINER RPCs<br/>Controlled privilege escalation]
-    end
-```
 
 ---
 
 ## Deployment Architecture
 
-```mermaid
-graph TB
-    GH[GitHub Repository] --> VCI[Vercel CI/CD]
-    VCI --> VB[vite build]
-    VB --> VS[Vercel Static Hosting<br/>CDN + Edge Network]
-    VCI -->|triggers| SB_DEPLOY[Supabase Migrations<br/>supabase db push]
-
-    DEV[Developer] -->|supabase functions deploy| SB_EF[Edge Functions]
-    DEV -->|SQL Editor or CLI| SB_MIG[Database Migrations]
-```
 
 Environment variables are injected at **build time** for `VITE_*` variables (baked into the JavaScript bundle) and at **runtime** for Edge Function secrets (stored in Supabase Vault / Dashboard).
