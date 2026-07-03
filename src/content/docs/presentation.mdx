@@ -1,0 +1,147 @@
+---
+title: "Presentation Guide"
+description: "Client and investor presentation narrative for Mlami BBQ."
+sidebar:
+  order: 1
+---
+
+
+## For Restaurant Owners
+
+### The Core Value Proposition
+
+Mlami BBQ is not just a website — it is a complete operating system for your restaurant. In one platform, it handles:
+
+- **Customer orders** with secure mobile payments (no cash handling required)
+- **Kitchen operations** with live order tracking and sound notifications
+- **Financial tracking** with automated revenue recording and expense management
+- **Staff management** with role-based access that limits what each person can see and do
+
+### Key Business Benefits
+
+**Increase Revenue**
+- Customers can order from their phone at the table — no waiting for a waiter
+- Online menu browsing increases table turnover time
+- M-Pesa integration covers 97% of Kenyan mobile money users
+
+**Reduce Errors**
+- Kitchen receives orders digitally — no misread handwriting
+- Prices are validated server-side — customers cannot manipulate the amount they pay
+- Every transaction is recorded automatically in the financial ledger
+
+**Improve Security**
+- Staff roles limit what each employee can access
+- Waiters can only see their own sales — they cannot view other staff data or financial reports
+- All payments go through M-Pesa — reducing cash handling risk
+
+**Save Time**
+- Order revenue is recorded automatically when marked complete
+- Financial reports are generated in seconds — not hours of manual accounting
+- Contact messages and reservations are centralized — no separate email inbox needed
+
+---
+
+## For Investors
+
+### What Was Built
+
+A production-grade, full-stack restaurant management platform with:
+
+| Component | Technology | Scale Capability |
+|-----------|-----------|-----------------|
+| Frontend SPA | React 18 + TypeScript | CDN-delivered globally |
+| Backend API | Supabase (PostgreSQL + REST) | Auto-scales with usage |
+| Payment Processing | Safaricom M-Pesa Daraja | KES 1–150,000 per transaction |
+| Real-time | WebSocket (Supabase Realtime) | Sub-second latency |
+| Serverless Compute | Deno Edge Functions | Scales to thousands of req/sec |
+| Rate Limiting | Upstash Redis (distributed) | Consistent limits across all instances |
+
+### Engineering Maturity Indicators
+
+This is not a prototype. Evidence of production-grade engineering:
+
+1. **Payment Idempotency** — Mathematically impossible to double-charge a customer for the same transaction, even if Safaricom sends the callback multiple times simultaneously.
+
+2. **Atomic Database Operations** — Orders and payment records are created in a single PostgreSQL transaction. There are no orphaned payments or missing orders.
+
+3. **Database-Level Security** — Row-Level Security means the database enforces access controls independently of the application code. Even if the frontend is compromised, the database will not serve unauthorized data.
+
+4. **Background Reconciliation** — A background job runs every 5 minutes to recover any payments that didn't complete normally — ensuring no revenue is lost due to network failures.
+
+5. **Structured Logging** — Every Edge Function operation is logged with structured JSON and a correlation ID for full auditability.
+
+### Current Limitations (Honest Assessment)
+
+- No automated test suite (manual testing only)
+- Single restaurant location
+- English-only interface
+- No offline order capability (requires internet for payment)
+
+### Expansion Potential
+
+The architecture supports:
+- Multiple restaurant branches (multi-tenancy via `branch_id`)
+- Additional payment methods (card, cash tracking already implemented)
+- Customer loyalty programs
+- Native mobile app using the same Supabase backend
+
+---
+
+## For Software Engineers
+
+### Onboarding Summary
+
+Welcome. Here is what you need to know to be productive quickly:
+
+**In 10 minutes:**
+1. Read [System Architecture](./02-system-architecture.md) for the mental model
+2. Run `npm install && npm run dev` — the app runs at `localhost:8080`
+3. The database TypeScript types are in `src/lib/database.types.ts`
+
+**The most important files:**
+- `src/lib/permissions.ts` — RBAC permission matrix. **All authorization checks use this file.**
+- `src/contexts/auth/useAuthProvider.tsx` — Authentication logic
+- `supabase/functions/mpesa-stk-push/index.ts` — The most complex Edge Function
+- `supabase/migrations/20260311_mpesa_hardening.sql` — The atomic payment RPCs
+
+**Patterns to follow:**
+- All data fetching goes through React Query hooks in `src/hooks/`
+- All authorization checks use `hasPermission()` from `src/lib/permissions.ts`
+- All monetary amounts are stored in **integer cents** — divide by 100 to display
+- Order status is **PascalCase** (`Pending`, `Preparing`, `Ready`, `Completed`, `Cancelled`)
+- Edge Functions log structured JSON with a `requestId` on every request
+
+**Things to never do:**
+- Don't put `SUPABASE_SERVICE_ROLE_KEY` in a `VITE_*` variable
+- Don't bypass RLS with `SECURITY DEFINER` unless absolutely necessary
+- Don't change order status strings — the `record_order_revenue` trigger depends on exact casing
+- Don't modify `complete_mpesa_payment()` without understanding the FOR UPDATE lock
+- Don't add new enum values to `app_role` without following the two-step migration process
+
+---
+
+## System at a Glance (One Slide Summary)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      MLAMI BBQ PLATFORM                      │
+│                                                             │
+│  Customer                  Kitchen Staff           Admin   │
+│     │                           │                    │     │
+│  Browse Menu              See orders live     Full control │
+│  Pay via M-Pesa          Update status        Financials  │
+│  Reserve table           Cook dashboard       Users       │
+│     │                           │                    │     │
+│     └───────────────────────────┴────────────────────┘     │
+│                              │                              │
+│                    React 18 SPA (Vercel CDN)                │
+│                              │                              │
+│                    Supabase Backend                         │
+│              ┌───────┬───────┬───────┬───────┐            │
+│              │  DB   │ Auth  │ RT    │  EF   │            │
+│              │ (RLS) │ (JWT) │ (WS)  │ (Deno)│            │
+│              └───────┴───────┴───────┴───────┘            │
+│                              │                              │
+│              M-Pesa ─── Redis ─── Resend ─── Sentry       │
+└─────────────────────────────────────────────────────────────┘
+```

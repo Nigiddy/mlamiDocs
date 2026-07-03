@@ -1,0 +1,40 @@
+---
+// SectionDivider.astro — visual separator with optional label
+interface Props {
+  label?: string;
+}
+const { label } = Astro.props;
+---
+<div class="section-divider">
+  <div class="line" />
+  {label && <span class="label">{label}</span>}
+  <div class="line" />
+</div>
+
+<style>
+.section-divider {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin: 3rem 0;
+}
+.line {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    var(--sl-color-gray-5),
+    transparent
+  );
+}
+.label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--sl-color-gray-3);
+  white-space: nowrap;
+  padding: 0 0.5rem;
+}
+</style>

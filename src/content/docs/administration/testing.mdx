@@ -1,0 +1,323 @@
+---
+title: "Testing Guide"
+description: "Manual test plans and automated testing strategy."
+sidebar:
+  order: 3
+---
+
+
+## Manual Test Plans
+
+This guide provides structured test procedures for every major system component.
+
+---
+
+## 1. Customer Flow
+
+### 1.1 Menu Browsing
+```
+1. Navigate to /menu
+2. Verify: Menu items load with names, prices, and images
+3. Verify: Category filter buttons appear
+4. Click a category → verify items filter correctly
+5. Verify: Out-of-stock items show a visual indicator
+6. Verify: Price displays in KES format (e.g., "KES 18.99")
+```
+
+### 1.2 Cart Management
+```
+1. Click "Add to Cart" on a menu item
+2. Verify: Cart badge count increments in navbar
+3. Open cart drawer (cart icon)
+4. Verify: Item appears with correct name, price, quantity
+5. Click "+" → quantity increases; click "-" → quantity decreases
+6. Reduce to 0 → item removes from cart
+7. Click "Clear Cart" → all items removed
+8. Add multiple different items → all appear in cart
+9. Verify: Subtotal calculates correctly
+```
+
+### 1.3 Checkout Flow (Sandbox)
+```
+1. Add items to cart (total ≥ KES 1)
+2. Click "Checkout" or "Pay with M-Pesa"
+3. Enter a valid Kenyan phone number format:
+   - Test: 0712345678 (07XX format)
+   - Test: 712345678 (7XX format)
+   - Test: 254712345678 (254XX format)
+4. Select a table number
+5. Click "Pay"
+6. Verify: Loading state shown
+7. Verify: "Check your phone" message appears
+8. In sandbox: use Safaricom's simulator to trigger callback
+9. Verify: Success state shown
+```
+
+### 1.4 Invalid Inputs
+```
+1. Try paying with: 0712 (too short) → expect error "Invalid phone number"
+2. Try paying with: out-of-stock item → expect error "Some items are no longer available"
+3. Try paying KES 0 → expect form validation prevents submission
+```
+
+---
+
+## 2. Payment System Tests
+
+### 2.1 STK Push Initiation
+```
+1. Open Supabase → Functions → Logs
+2. Initiate a payment from the frontend
+3. Verify logs show:
+   - stk_push_request_received
+   - env_check (all env vars present)
+   - price_validation_passed
+   - daraja_auth_success
+   - stk_push_sent
+   - transaction_recorded
+4. In Database → mpesa_transactions:
+   - Record exists with status = PENDING
+   - checkout_request_id is populated
+```
+
+### 2.2 Successful Callback (Sandbox)
+```
+1. Use Safaricom sandbox simulator (developer.safaricom.co.ke → Simulate)
+2. Enter the CheckoutRequestID from the PENDING transaction
+3. Submit with ResultCode = 0
+4. Verify in Supabase Logs (mpesa-callback function):
+   - callback_received
+   - ip_blocked NOT appearing (sandbox mode)
+   - hmac_validation_skipped (expected in sandbox)
+   - callback_parsed
+   - payment_and_order_confirmed with order_id
+5. In Database:
+   - mpesa_transactions record → status = COMPLETED
+   - New order in orders table with status = Pending
+   - order_items populated correctly
+6. In Kitchen Dashboard:
+   - New order card appears (may need ~3 seconds due to debounce)
+```
+
+### 2.3 Failed Payment Callback
+```
+1. Simulate callback with ResultCode = 1 (user cancelled)
+2. Verify:
+   - mpesa_transactions → status = FAILED
+   - No order created in orders table
+   - Logs show payment_failed
+```
+
+### 2.4 Idempotency Test
+```
+1. Generate an idempotencyKey (UUID)
+2. Send two identical STK Push requests with the same key
+3. Verify: Only one transaction record in mpesa_transactions
+4. Verify: Second request returns the existing transaction details
+```
+
+### 2.5 Rate Limiting Test
+```
+1. Send 6 STK Push requests quickly from the same IP
+2. Verify: 6th request returns HTTP 429 with:
+   - message: "Too many requests. Please try again later."
+   - code: "RATE_LIMIT_EXCEEDED"
+3. Check function logs for rate_limit_exceeded warning
+```
+
+---
+
+## 3. Kitchen Dashboard Tests
+
+### 3.1 Real-time Order Appearance
+```
+1. Open kitchen dashboard with Cook credentials
+2. In a separate browser/tab, complete a payment (or insert test order via SQL)
+3. Verify (within ~3 seconds):
+   - New order card appears in "Pending" column
+   - Toast notification shows table number and order number
+4. If sound is enabled: verify chime sound plays
+```
+
+### 3.2 Order Status Updates
+```
+1. Click "Start Preparing" on a Pending order
+2. Verify: Card moves to "Preparing" column
+3. Click "Mark Ready" → card moves to "Ready"
+4. Click "Complete" → card moves to "Completed"
+5. Verify: Each status change triggers a toast notification
+6. Verify: Status change sound (blip) plays if sound enabled
+```
+
+### 3.3 Sound Toggle
+```
+1. Enable sound toggle → test order arrival → verify chime plays
+2. Disable sound toggle → test order arrival → verify NO chime plays
+3. Refresh page → verify sound preference is remembered (localStorage)
+```
+
+### 3.4 Connection Indicator
+```
+1. Open kitchen dashboard → verify green dot (connected)
+2. Disconnect internet briefly → verify dot turns grey
+3. Reconnect → verify dot returns to green
+```
+
+---
+
+## 4. Admin Dashboard Tests
+
+### 4.1 Login
+```
+1. Navigate to /login
+2. Enter admin credentials
+3. Verify: Redirect to /admin
+4. Verify: "Admin" badge shown in header dropdown
+5. Verify: All sidebar items visible
+```
+
+### 4.2 Role Restriction Tests
+```
+Cook login:
+1. Login with Cook credentials
+2. Verify: Sidebar shows Dashboard, Orders, Cook Dashboard, Inventory, QR Codes
+3. Verify: Financial, Users, Reservations, Contact NOT visible
+4. Try navigating manually to /admin → verify auto-redirect to cook view
+
+Waiter login:
+1. Login with Waiter credentials
+2. Verify: Sidebar shows Orders, Record Sale, My Sales only
+3. Verify: No access to financial/admin views
+```
+
+### 4.3 Financial Dashboard
+```
+1. Login as Admin → Financial Dashboard
+2. Verify: KPI cards show values (or 0 if no data)
+3. Change period filter → verify values update
+4. Record a Manual Sale:
+   a. Click "Record Sale"
+   b. Enter amount, select payment method and order type
+   c. Submit
+   d. Verify: New transaction appears in Recent Transactions
+   e. Verify: "Manual Sales" KPI card updates
+5. Add Expense:
+   a. Click "Add Expense"
+   b. Enter amount, category, description
+   c. Submit
+   d. Verify: "Total Expenses" KPI card updates
+   e. Verify: Net Profit decreases
+```
+
+### 4.4 Data Export
+```
+1. Financial Dashboard → Export Data → Export as CSV
+2. Verify: CSV file downloads with transaction data
+3. Verify: Amounts are in KES (not cents)
+4. Export as PDF → verify PDF downloads with formatting
+5. Export as JSON → verify JSON structure is correct
+```
+
+### 4.5 User Management
+```
+1. Navigate to Users view
+2. Invite a test user via Supabase Auth
+3. Use "Promote User" form to assign 'cook' role
+4. Verify: user_roles table updated in database
+```
+
+---
+
+## 5. Authentication Tests
+
+### 5.1 Login Flow
+```
+1. Navigate to /login
+2. Enter wrong password → verify generic error (no user enumeration)
+3. Enter correct credentials → verify redirect to /admin
+4. Sign out → verify redirect to /
+5. Navigate back to /admin → verify redirect to /login
+```
+
+### 5.2 Session Persistence
+```
+1. Login successfully
+2. Close and reopen the browser tab
+3. Verify: Still logged in (JWT session persisted)
+4. Wait for JWT expiry (or clear localStorage) → verify redirected to login
+```
+
+---
+
+## 6. Reconciliation Tests
+
+```
+1. Create a PENDING mpesa_transactions record manually:
+   INSERT INTO mpesa_transactions (phone_number, amount, checkout_request_id, 
+   merchant_request_id, status, created_at)
+   VALUES ('254712345678', 1000, 'test-checkout-id', 'test-merchant-id', 
+   'PENDING', now() - INTERVAL '3 minutes');
+
+2. In Financial Dashboard → M-Pesa Reconciliation Panel → click "Reconcile Now"
+3. Verify: Response shows {settled: 0, failed: 1, errors: 0} (sandbox will fail)
+4. For production test: verify that Daraja returns real status for real checkout ID
+```
+
+---
+
+## 7. Contact and Reservation Tests
+
+```
+1. Navigate to /contact
+2. Submit contact form with valid data
+3. Verify: Success toast shown
+4. Login as Admin → Contact Messages
+5. Verify: Message appears in inbox
+
+6. Navigate to /reservation
+7. Submit reservation with future date and time
+8. Verify: Success toast shown
+9. Login as Admin → Reservations
+10. Verify: Reservation appears in list
+```
+
+---
+
+## 8. PWA Tests
+
+```
+1. Load site in Chrome DevTools → Application → Service Workers
+2. Verify: Service worker registered
+3. Check Application → Cache Storage → verify assets cached
+4. Disable network in DevTools
+5. Reload page → verify cached content loads (offline mode)
+6. Verify: Offline banner appears
+7. Re-enable network → verify banner disappears
+```
+
+---
+
+## Recommended Automated Testing Strategy
+
+While no automated tests currently exist, here is the recommended approach for future implementation:
+
+### Unit Tests (Vitest)
+- `lib/permissions.ts` — `hasPermission()` function for all role/permission combinations
+- `services/mpesaService.ts` — `formatPhoneNumber()` for all format variations
+- `lib/formatters.ts` — `formatCurrency()` for various inputs
+
+### Integration Tests (Playwright or Cypress)
+- Customer order flow (menu → cart → checkout mock)
+- Admin login and role-based view access
+- Form submission with validation errors
+- Cart quantity management
+
+### Edge Function Tests (Deno test)
+- `mpesa-stk-push` — rate limiting, price validation, phone formatting
+- `mpesa-callback` — IP allowlist, HMAC verification, idempotency
+- `mpesa-reconcile` — pending transaction settlement flow
+
+### Load Testing (k6)
+- Concurrent STK Push submissions
+- Verify rate limiting engages at correct thresholds
+- Verify no race conditions in payment completion

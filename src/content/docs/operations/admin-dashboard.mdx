@@ -1,0 +1,222 @@
+---
+title: "Admin & Kitchen Dashboard"
+description: "All dashboard views: admin, cook, waiter, and their capabilities."
+sidebar:
+  order: 1
+---
+
+
+## Overview
+
+All staff access the admin panel at `/admin`. The panel is a single-page application with a sidebar navigation and main content area. The sidebar dynamically shows only the views the logged-in user's role allows.
+
+---
+
+## Access by Role
+
+| View | Admin | Cook | Waiter |
+|------|-------|------|--------|
+| Dashboard (Stats) | ✅ | ✅ | ❌ |
+| Orders | ✅ | ✅ | ✅ |
+| Cook Dashboard | ✅ | ✅ | ❌ |
+| Inventory | ✅ | ✅ | ❌ |
+| QR Codes | ✅ | ✅ | ❌ |
+| Financial Dashboard | ✅ | ❌ | ❌ |
+| Users | ✅ | ❌ | ❌ |
+| Reservations | ✅ | ❌ | ❌ |
+| Contact Messages | ✅ | ❌ | ❌ |
+| Record Sale | ✅ | ❌ | ✅ |
+| My Sales | ✅ | ❌ | ✅ |
+
+---
+
+## Dashboard View (`StatsCards`)
+
+**File:** `src/components/admin/StatsCards.tsx`  
+**Hook:** `src/hooks/useStatsCardSummary.ts`
+
+The stats dashboard shows 4 KPI cards powered by the `get_dashboard_stats()` RPC:
+
+| Card | Metric | Trend |
+|------|--------|-------|
+| Active Orders | Count of Pending + Preparing + Ready orders | — |
+| Completed Today | Count of Completed orders since midnight (Nairobi time) | +N% vs prior 7 days |
+| Total Revenue | Sum of all order totals + manual sales (in KES) | +N% vs prior 7 days |
+| Avg. Order Value | Total Revenue ÷ Completed order count | Derived |
+
+**Performance:** All 4 metrics are computed in a **single SQL query** inside `get_dashboard_stats()`, running server-side aggregation rather than fetching raw data to the browser.
+
+---
+
+## Orders View (`OrdersTable` + `OrderDetails`)
+
+**Files:** `src/components/admin/OrdersTable.tsx`, `src/components/admin/OrderDetails.tsx`
+
+The orders view is a split layout: table on the left, detail panel on the right.
+
+### OrdersTable Features
+- Filters by status (All, Pending, Preparing, Ready, Completed, Cancelled)
+- Search by order ID, customer name, or table number
+- Status badges with color coding
+- Clickable rows to open detail panel
+- Relative timestamps ("2 min ago")
+
+### OrderDetails Features
+- Full order information: customer, table, items, quantities, prices
+- Payment method and M-Pesa receipt number
+- Status update buttons (inline status transitions)
+- Order notes display
+
+---
+
+## Cook Dashboard (`CookDashboard`)
+
+**File:** `src/components/admin/CookDashboard.tsx`  
+**Hook:** `src/hooks/useKitchenRealtime.ts`, `src/hooks/useLightOrders.ts`
+
+The Cook Dashboard is a **card-based Kanban-style interface** designed for kitchen use. It is distinct from the admin orders table.
+
+### Features
+- Columns: Pending → Preparing → Ready → Completed
+- Each order is displayed as a card with:
+  - Order number and table number
+  - Elapsed time since order placed
+  - List of items and quantities
+  - Item notes
+- Large touch-friendly action buttons for status transitions
+- Sound notification toggle (persisted in localStorage via `useKitchenSound`)
+- Live connection indicator (green/grey dot)
+- Real-time updates via WebSocket (new order cards appear without refresh)
+- Sound alerts: 3-note chime for new orders, single blip for status changes
+
+### Sound System
+
+Sounds are generated programmatically via the Web Audio API in `src/lib/kitchenSound.ts`. No audio files needed. The cook can toggle sound on/off — state persists across sessions via localStorage.
+
+---
+
+## Financial Dashboard (`FinancialDashboard`)
+
+**File:** `src/components/admin/FinancialDashboard.tsx`  
+**See also:** [Financial Module](./11-financial-module.md) for full details.
+
+### Period Filters
+- Daily, Weekly, Monthly (default), Yearly
+
+### Category Filters
+- All categories (default)
+- Dynamic list of categories from the database
+
+### KPI Cards (6 cards)
+1. **Total Revenue** — sum of all revenue transactions
+2. **Total Expenses** — sum of all expense entries
+3. **Net Profit** — Revenue - Expenses - Refunds
+4. **M-Pesa Revenue** — Revenue from STK Push completions
+5. **Manual Sales** — Cash, card, bank transfer, manual M-Pesa
+6. **Refunds Issued** — Total refunds in the period
+
+### Charts
+- Revenue vs Expenses line chart (over time)
+- Category breakdown pie chart
+- Both powered by Recharts
+
+### Actions
+- **Record Sale** — Opens `ManualSaleModal` (admin version with all payment methods)
+- **Add Expense** — Inline `ExpenseForm`
+- **Refund** — Opens `RefundModal`
+- **Export Data** — Dropdown: CSV (via Edge Function), PDF (jsPDF), JSON, Text Report
+
+### Transaction Feed
+- Last 10 transactions displayed as wallet-style cards
+- Each card shows transaction type (revenue/expense/refund), amount, category, date
+- Human-readable description parsing for manual sales
+- Recorder attribution (who recorded the transaction)
+
+### M-Pesa Reconciliation Panel
+- Shows PENDING transaction count
+- Button to trigger `mpesa-reconcile` Edge Function manually
+- Displays result summary after reconciliation
+
+---
+
+## Inventory Management
+
+**File:** `src/components/admin/InventoryManagement.tsx`
+
+Simple toggle-based interface showing all menu items with an in-stock/out-of-stock toggle. Changes are written directly to `menu_items.in_stock`. Out-of-stock items are rejected during M-Pesa payment validation.
+
+---
+
+## QR Code Generator
+
+**File:** `src/components/admin/QRCodeGenerator.tsx`
+
+Generates QR codes for each table. When scanned, QR codes can direct customers to the menu with the table number pre-populated. Codes can be downloaded as PNG for printing.
+
+---
+
+## User Management
+
+**File:** `src/components/admin/UserRoles/` + `PromoteUserForm.tsx`
+
+Admin-only view showing all registered users and their roles. Provides the ability to assign roles to users by email address. Role changes take effect on the user's next login.
+
+---
+
+## Reservations (`ReservationsList`)
+
+**File:** `src/components/admin/ReservationsList.tsx`
+
+Admin-only list of all table reservation requests. Shows name, email, phone, date, time, guest count, and special requests. Supports marking reservations as confirmed/cancelled.
+
+---
+
+## Contact Messages (`ContactMessages`)
+
+**File:** `src/components/admin/ContactMessages.tsx`
+
+Admin-only inbox for customer contact form submissions. Messages can be marked as read or deleted.
+
+---
+
+## Waiter: Record Sale (`WaiterRecordSale`)
+
+**File:** `src/components/admin/WaiterRecordSale.tsx`
+
+Waiter-specific form for recording manual sales. Fields:
+- Amount (in KES)
+- Payment method (cash, card, bank transfer, M-Pesa manual)
+- Order type (dine-in, takeaway, delivery)
+- Notes (optional)
+- Sale date
+
+The form automatically sets `recorded_by = auth.uid()` and `recorded_by_name` from the user's profile. The waiter's user ID is enforced by RLS — they cannot record sales on behalf of others.
+
+---
+
+## Waiter: My Sales (`MySales`)
+
+**File:** `src/components/admin/MySales.tsx`  
+**Hook:** `src/hooks/useMySales.ts`
+
+Shows the current waiter's own sales history. Filters and date range selection. The RLS policy on `manual_sales` ensures only the waiter's own records are returned by the database, regardless of any frontend filtering.
+
+---
+
+## Sidebar Navigation (`AdminSidebar`)
+
+**File:** `src/components/admin/AdminSidebar.tsx`
+
+The sidebar filters its navigation items based on `hasPermission()` from the auth context. Navigation items are conditionally rendered based on the current user's role. This means the sidebar is dynamically generated — no hardcoded per-role rendering logic needed.
+
+---
+
+## Page Layout
+
+The admin page uses a two-column layout:
+- **Left (sidebar):** `w-64` fixed width, sticky
+- **Right (main content):** `flex-1`, full remaining width
+
+At mobile breakpoints (below `md`), the sidebar stacks above the main content. The header is sticky with `z-10` so it remains visible during scroll.
+
+The currently active view title is rendered as the `<h1>` in the sticky header. Role badges are shown in the user dropdown button.

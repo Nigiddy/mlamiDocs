@@ -1,0 +1,193 @@
+---
+title: "Customer Order Flow"
+description: "End-to-end journey from menu browsing to kitchen delivery."
+sidebar:
+  order: 1
+---
+
+
+## Complete End-to-End Sequence
+
+```mermaid
+sequenceDiagram
+    actor Customer
+    participant FE as React Frontend
+    participant CART as Cart Context
+    participant MS as mpesaService.ts
+    participant EF1 as mpesa-stk-push
+    participant DB as PostgreSQL
+    participant DAR as Daraja API
+    participant PHONE as Customer's Phone
+    participant EF2 as mpesa-callback
+    participant RT as Supabase Realtime
+    participant KD as Kitchen Dashboard
+
+    Customer->>FE: Visits mlamibbq.com
+    FE->>DB: Fetch menu_items (React Query)
+    DB-->>FE: Menu items + categories
+    FE->>Customer: Renders menu page
+
+    Customer->>CART: Clicks "Add to Cart"
+    CART->>CART: Stores item in React state
+    FE->>Customer: Updates cart badge + slide-out drawer
+
+    Customer->>FE: Reviews cart, clicks "Checkout"
+    FE->>Customer: Shows checkout form (phone + table number)
+
+    Customer->>FE: Enters 0712345678 + Table 3
+    FE->>MS: initiateMpesaPayment({phone, amount, table, items})
+    MS->>MS: formatPhoneNumber() → 254712345678
+    MS->>EF1: POST (15s timeout)
+
+    EF1->>EF1: Rate limit check (IP: 5/min, Phone: 2/min)
+    EF1->>DB: Idempotency check (if key provided)
+    EF1->>DB: Price validation (fetch DB prices for item IDs)
+    EF1->>DB: Stock check (in_stock for each item)
+    EF1->>DAR: GET OAuth token (Basic auth)
+    DAR-->>EF1: {access_token}
+    EF1->>DAR: POST /stkpush/v1/processrequest
+    DAR-->>EF1: {CheckoutRequestID, MerchantRequestID, ResponseCode: "0"}
+    EF1->>DB: INSERT mpesa_transactions (status=PENDING, idempotency_key)
+    EF1-->>MS: {success: true, checkoutRequestId}
+    MS-->>FE: MpesaResponse
+    FE->>Customer: "Check your phone to complete payment"
+
+    DAR->>PHONE: Push notification: "Pay KES 500 to Mlami BBQ?"
+    PHONE->>Customer: Shows M-Pesa PIN prompt
+    Customer->>PHONE: Enters PIN
+    PHONE->>DAR: Approves payment
+
+    DAR->>EF2: POST callback {ResultCode: 0, MpesaReceiptNumber, ...}
+    EF2->>EF2: Method check (POST only)
+    EF2->>EF2: IP allowlist check (Safaricom IPs only in production)
+    EF2->>EF2: HMAC-SHA256 signature verification
+    EF2->>DB: CALL complete_mpesa_payment() [atomic]
+    DB->>DB: SELECT * FROM mpesa_transactions FOR UPDATE (lock)
+    DB->>DB: Check idempotency (already_completed?)
+    DB->>DB: CALL create_order() [atomic]
+    DB->>DB: INSERT customers (ON CONFLICT DO UPDATE)
+    DB->>DB: INSERT orders
+    DB->>DB: INSERT order_items (bulk)
+    DB->>DB: UPDATE mpesa_transactions SET status=COMPLETED, order_id=X
+    DB-->>EF2: {already_completed: false, order_id: 42}
+    EF2-->>DAR: {ResultCode: 0} (acknowledge)
+
+    DB->>RT: Postgres CDC: INSERT on orders table
+    RT->>KD: WebSocket: new order event
+    KD->>KD: React Query cache invalidated
+    KD->>DB: Refetch orders
+    DB-->>KD: Updated order list
+    KD->>KD: Re-renders with new order card
+    KD->>KD: playChime('new-order')
+    KD->>KD: Toast: "🔔 New Order! Table #3 — Order #0042"
+```
+
+---
+
+## Detailed Step-by-Step
+
+### Step 1: Menu Loading
+
+The customer visits the menu page (`/menu`). The `useMenuItems` hook fetches all menu items from Supabase using React Query. Items are cached for 5 minutes.
+
+```typescript
+// src/hooks/useMenuItems.tsx
+const { data } = useQuery({
+  queryKey: ['menu-items'],
+  queryFn: () => supabase.from('menu_items').select('*, categories(*)').order('name'),
+  staleTime: 5 * 60 * 1000,
+});
+```
+
+### Step 2: Cart Management
+
+The `CartContext` manages cart state in React memory:
+
+- **Add item:** If item already in cart, increments quantity. Otherwise appends.
+- **Remove item:** Filters item from array.
+- **Clear cart:** Resets to empty array.
+- **Quantity management:** Directly sets quantity for an item.
+
+Cart state is **not persisted** to localStorage or the database until payment is initiated.
+
+### Step 3: Checkout
+
+When the customer clicks Pay, they enter:
+- **Phone number:** Supports formats `07XXXXXXXX`, `7XXXXXXXX`, `254XXXXXXXX`, `+254XXXXXXXX`
+- **Table number:** Selected from a dropdown of registered tables from the `tables` table
+
+A client-side `idempotencyKey` (`crypto.randomUUID()`) is generated to prevent duplicate charges if the user retries.
+
+### Step 4: STK Push Initiation
+
+`mpesaService.ts:initiateMpesaPayment()` calls the `mpesa-stk-push` Edge Function with a **15-second timeout**. The Edge Function:
+
+1. **Rate limits** by IP (5/min) and phone (2/min)
+2. **Checks idempotency** — if the same key exists for a PENDING/COMPLETED transaction, returns the existing transaction
+3. **Server-side price validation** — fetches authoritative prices from DB, recomputes total, rejects if client amount differs by more than KES 1
+4. **Stock validation** — rejects if any item is marked `in_stock = false`
+5. **Phone validation** — rejects malformed Kenyan phone numbers
+6. **Fetches Daraja OAuth token** — using Consumer Key + Secret
+7. **Sends STK Push** — Daraja pushes a PIN prompt to the customer's phone
+8. **Inserts PENDING transaction** record in the database
+
+### Step 5: Customer Approves Payment
+
+The customer sees the M-Pesa payment prompt on their phone and enters their PIN. This step is fully handled by Safaricom's systems — the restaurant's application is not involved.
+
+### Step 6: Callback Processing
+
+Safaricom POSTs to the `mpesa-callback` Edge Function URL. The function:
+
+1. **Verifies method is POST** (rejects GET/other)
+2. **IP allowlist check** (production only) — verifies the request comes from one of Safaricom's 12 known production IPs
+3. **HMAC-SHA256 verification** — validates the `x-mpesa-signature` header against the raw body using the `MPESA_CALLBACK_SECRET`
+4. **Parses callback** — extracts `ResultCode`, `CheckoutRequestID`, receipt, date, phone
+5. **Calls `complete_mpesa_payment()` RPC** (on `ResultCode === 0`) or `fail_mpesa_payment()` (otherwise)
+6. **Acknowledges to Safaricom** — always returns `{ResultCode: 0}` to prevent retries during transient errors
+
+### Step 7: Atomic Order Creation
+
+The `complete_mpesa_payment()` RPC (PL/pgSQL):
+
+```sql
+-- Lock the row to prevent concurrent duplicate callbacks
+SELECT * FROM mpesa_transactions 
+WHERE checkout_request_id = p_checkout_request_id FOR UPDATE;
+
+-- Idempotency: if already completed, skip
+IF v_transaction.status = 'COMPLETED' THEN
+  RETURN jsonb_build_object('already_completed', true, ...);
+END IF;
+
+-- Create order atomically within this same DB transaction
+v_order_id := public.create_order(...);
+
+-- Mark transaction complete
+UPDATE mpesa_transactions SET status = 'COMPLETED', order_id = v_order_id ...;
+```
+
+The `FOR UPDATE` lock ensures that if Safaricom sends the callback twice simultaneously, the second call waits for the first to complete and then hits the idempotency check — preventing duplicate orders.
+
+### Step 8: Kitchen Notification
+
+The order INSERT triggers Postgres CDC → Supabase Realtime → WebSocket to the kitchen's browser. The `useKitchenRealtime` hook:
+
+1. Invalidates React Query `orders` cache (debounced 2.5s)
+2. Plays a 3-note chime via Web Audio API
+3. Shows a toast notification with table and order number
+
+---
+
+## Error States
+
+| Scenario | Handling |
+|---------|----------|
+| Network timeout (>15s) | Frontend shows timeout error; reconciler picks up PENDING transaction |
+| Payment cancelled by user | Callback with `ResultCode ≠ 0`; `fail_mpesa_payment()` marks FAILED |
+| Out-of-stock item | Edge Function rejects with `OUT_OF_STOCK` error before STK Push |
+| Price mismatch | Edge Function rejects with `PRICE_MISMATCH` error |
+| Invalid phone | Rejected by edge function with `INVALID_PHONE` error |
+| DB insert fails after STK Push sent | Error logged; reconciler recovers payment |
+| Duplicate callback | `FOR UPDATE` lock + idempotency check prevents duplicate order |
+| Missing callback (Safaricom timeout) | `mpesa-reconcile` queries Daraja every 5 min and settles |

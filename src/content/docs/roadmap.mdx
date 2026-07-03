@@ -1,0 +1,211 @@
+---
+title: "Future Roadmap"
+description: "Short, medium, and long-term planned improvements."
+sidebar:
+  order: 1
+---
+
+
+This document lists improvements organized by priority and complexity. Items are based on observed limitations and industry best practices for restaurant management systems at this scale.
+
+---
+
+## High Priority
+
+### 1. Customer Order Tracking Page
+**What:** A page at `/order/[id]` where customers can check their order status in real-time after payment.
+
+**Why:** Currently, customers have no visibility after paying. A tracking page reduces service anxiety and improves experience.
+
+**How:**
+- Create `/order/:orderId` route
+- Fetch order status via Supabase query with anon key (no auth required — just order ID)
+- Subscribe to Realtime updates on the specific order row
+- Show Pending → Preparing → Ready → Completed progress indicator
+- M-Pesa receipt number shown as confirmation
+
+**Complexity:** Medium — requires new public route, Realtime subscription, and RLS policy update to allow anon read by order ID.
+
+---
+
+### 2. Automated Test Suite
+**What:** Vitest unit tests, Playwright integration tests, Deno Edge Function tests.
+
+**Why:** The current codebase has no automated tests. As the application grows, bugs become harder to catch manually.
+
+**Priority areas:**
+- `lib/permissions.ts` — `hasPermission()` for all role combinations
+- `services/mpesaService.ts` — phone number formatting
+- `mpesa-stk-push` Edge Function — price validation and rate limiting
+- `mpesa-callback` — idempotency and atomic RPC behavior
+
+---
+
+### 3. Real-time Role Updates
+**What:** When an admin changes a user's role, the change takes effect immediately without requiring the user to log out.
+
+**Why:** Currently, a demoted admin still has full access until their next login.
+
+**How:**
+- Subscribe to Realtime on `user_roles` table filtered by `user_id = auth.uid()`
+- On `INSERT` or `DELETE` events, re-fetch roles and update AuthContext
+- Add a toast notification: "Your role has been updated. Some features may have changed."
+
+**Complexity:** Low — uses existing Realtime infrastructure.
+
+---
+
+### 4. Nonce-Based Content Security Policy
+**What:** Replace `'unsafe-inline'` in CSP with cryptographic nonces.
+
+**Why:** `'unsafe-inline'` weakens XSS protection by allowing any inline script/style.
+
+**How:**
+- Move from Vercel static headers to Vercel Edge Middleware
+- Generate a nonce per request and inject it into `<script nonce="">` tags and the CSP header
+- Configure Framer Motion to use CSS variables instead of inline styles where possible
+
+**Complexity:** High — requires understanding of which inline styles are essential.
+
+---
+
+### 5. M-Pesa B2C Refunds
+**What:** Automatically initiate M-Pesa B2C payments when a refund is processed.
+
+**Why:** Currently, refunds are recorded as accounting entries only. The actual money must be sent to the customer manually.
+
+**How:**
+- New Edge Function `mpesa-b2c`
+- Triggered from admin when processing a refund with payment method `mpesa`
+- Uses Daraja B2C API to send money to the customer's phone
+- Updates refund record with B2C receipt number
+
+**Complexity:** High — requires Safaricom B2C API approval and additional testing.
+
+---
+
+## Medium Priority
+
+### 6. Menu Item Analytics
+**What:** Track which menu items are ordered most frequently and generate weekly reports.
+
+**How:**
+- Query `order_items` joined with `menu_items` for frequency analysis
+- `useMenuAnalytics` hook using `get_menu_analytics()` RPC
+- Chart in admin: top 10 items by quantity and revenue
+- Badge "Popular" on frequently ordered items on the menu page
+
+---
+
+### 7. Kitchen Order Timer
+**What:** Each kitchen order card shows a timer counting up from when the order was placed, turning yellow (>10min) and red (>20min).
+
+**Why:** Helps kitchen staff prioritize and manage wait times.
+
+**How:**
+- Use `useInterval` hook to update displayed elapsed time
+- Color-coded badge: green < 10min, yellow 10-20min, red > 20min
+- Optional: alarm when order exceeds threshold
+
+---
+
+### 8. Expense Categories and Reporting
+**What:** Expand expense tracking with more granular categories and month-over-month comparison reports.
+
+**How:**
+- Add `expenses_categories` table with configurable categories
+- Month-over-month trend comparison chart
+- Export financial comparison reports
+
+---
+
+### 9. Customer Loyalty System
+**What:** Track customer orders and apply discounts for repeat customers.
+
+**How:**
+- Add `customer_visits` count to `customers` table (incremented by trigger)
+- Apply discount code system (discount_codes table)
+- After 5 orders: offer 10% discount on next order
+
+---
+
+### 10. Table Reservation Integration with Orders
+**What:** Link confirmed reservations to orders — when a reserved table is occupied, automatically associate their orders.
+
+**Why:** Currently, reservations and orders are completely disconnected.
+
+---
+
+### 11. Email Receipt for M-Pesa Payments
+**What:** Automatically send a payment confirmation email after successful M-Pesa payment.
+
+**How:**
+- In `complete_mpesa_payment()` RPC or the callback Edge Function, trigger `send-contact-email` with receipt details
+- Template: receipt number, amount, items, table number, timestamp
+
+---
+
+### 12. Inventory with Quantity Tracking
+**What:** Track stock quantities for ingredients, not just binary in/out-of-stock.
+
+**Why:** Currently, `in_stock` is a boolean toggle. No stock counting.
+
+**How:**
+- Add `stock_quantity` and `low_stock_threshold` to `menu_items`
+- Auto-decrement on order completion
+- Alert when quantity drops below threshold
+
+---
+
+## Low Priority (Future Consideration)
+
+### 13. Multi-Branch Support
+**What:** Support multiple restaurant locations under one Supabase project.
+
+**How:**
+- Add `branch_id` to all tables
+- RLS policies filter by branch
+- Admin sees all branches; branch staff see only their branch
+
+### 14. Customer Mobile App (React Native)
+**What:** Native iOS/Android app using the same Supabase backend.
+
+**Why:** Better performance and offline support than PWA on mobile.
+
+### 15. Receipt Printing Integration
+**What:** Automatically print kitchen receipts when an order is placed.
+
+**How:**
+- WebSocket connection to a local print server
+- Star Micronics or Epson thermal printer API
+
+### 16. Table Waitlist
+**What:** Allow customers to join a digital waitlist when the restaurant is full.
+
+### 17. Split Bill
+**What:** Allow a table's order to be split and paid by multiple customers.
+
+### 18. Staff Scheduling
+**What:** Admin manages staff shift schedules within the app.
+
+### 19. External Delivery Integration
+**What:** Push orders to Glovo, Uber Eats, or local delivery platforms.
+
+### 20. Advanced Analytics Dashboard
+**What:** Heat maps of busy hours, seasonal trends, customer lifetime value.
+
+---
+
+## Technical Debt
+
+| Item | Priority | Description |
+|------|----------|-------------|
+| IP masking in rate limit logs | Medium | Only log first 2 octets of IPv4 to avoid PII in logs |
+| In-memory cart persistence | Low | Save cart to localStorage for page-refresh resilience |
+| Manual reconciliation trigger | Medium | Add pg_cron job instead of relying on manual triggers |
+| CSP `unsafe-inline` removal | High | Migrate to nonce-based CSP |
+| Automated test suite | High | Add Vitest + Playwright coverage |
+| Error boundary reporting | Medium | Pipe ErrorBoundary catches to Sentry with user context |
+| `supabase/functions/.env` sandbox creds | Critical | Remove from repository — use `.gitignore` and Supabase Vault only |
+
+> ⚠️ **The `supabase/functions/.env` file currently contains sandbox M-Pesa credentials. These are sandbox credentials only, but the file should still be added to `.gitignore` to establish secure habits before going to production.**

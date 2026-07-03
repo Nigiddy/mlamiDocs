@@ -1,0 +1,256 @@
+---
+title: "Folder Structure"
+description: "Complete directory layout and file responsibilities."
+sidebar:
+  order: 3
+---
+
+
+Complete map of the repository layout with responsibility annotations.
+
+---
+
+## Root Directory
+
+```
+mlamiBBQ/
+├── .env                        ← Local environment variables (gitignored)
+├── .env.example                ← Template for environment variables
+├── .gitignore                  ← Git ignore rules
+├── components.json             ← shadcn/ui component configuration
+├── Dockerfile                  ← Container build definition (for self-hosting)
+├── eslint.config.js            ← ESLint flat config
+├── index.html                  ← HTML entry point (Vite injects bundle here)
+├── nginx.conf                  ← Nginx config (for Docker / self-hosted deployments)
+├── package.json                ← Node dependencies and scripts
+├── package-lock.json           ← Locked dependency tree
+├── postcss.config.js           ← PostCSS config (autoprefixer)
+├── tailwind.config.ts          ← Tailwind design tokens and plugins
+├── tsconfig.json               ← Root TypeScript config
+├── tsconfig.app.json           ← App-specific TypeScript settings
+├── tsconfig.node.json          ← Vite build tool TypeScript settings
+├── vercel.json                 ← Vercel deployment config (rewrites + security headers)
+├── vite.config.ts              ← Vite build, PWA, compression, code-splitting config
+├── docs/                       ← ← YOU ARE HERE (official documentation)
+├── dist/                       ← Production build output (gitignored)
+├── node_modules/               ← Installed dependencies (gitignored)
+├── public/                     ← Static assets served at root URL
+│   ├── favicon.ico
+│   ├── fonts/                  ← Self-hosted WOFF2 font files
+│   └── images/                 ← Static images (logo, PWA icons)
+├── scripts/                    ← Build or utility scripts
+├── src/                        ← Application source code (see below)
+└── supabase/                   ← Supabase backend configuration (see below)
+```
+
+---
+
+## `src/` — Application Source
+
+```
+src/
+├── App.tsx                     ← Root component: providers, routes, ProtectedRoute
+├── App.css                     ← Global app-level styles
+├── index.css                   ← Design system: CSS variables, global utilities
+├── main.tsx                    ← Entry point: Sentry init, env check, React mount
+├── vite-env.d.ts               ← Vite environment type declarations
+
+├── pages/                      ← Top-level route components
+│   ├── Index.tsx               ← Home page (/)
+│   ├── Menu.tsx                ← Full menu page (/menu)
+│   ├── About.tsx               ← About page (/about)
+│   ├── Contact.tsx             ← Contact form page (/contact)
+│   ├── Reservation.tsx         ← Table reservation page (/reservation)
+│   ├── Admin.tsx               ← Admin dashboard shell (/admin) — role-gated
+│   ├── Login.tsx               ← Staff login page (/login)
+│   ├── NotFound.tsx            ← 404 page (*) 
+│   ├── PrivacyPolicy.tsx       ← Privacy policy (/privacy-policy)
+│   └── TermsOfService.tsx      ← Terms of service (/terms-of-service)
+
+├── components/                 ← Reusable UI components
+│   ├── Layout.tsx              ← Page wrapper (Navbar + children + Footer)
+│   ├── Navbar.tsx              ← Navigation bar (mobile responsive)
+│   ├── Footer.tsx              ← Site footer with links and info
+│   ├── Hero.tsx                ← Home page hero section with carousel
+│   ├── PopularDishes.tsx       ← Featured dishes section on home
+│   ├── AboutUs.tsx             ← About section component
+│   ├── Cart.tsx                ← Slide-out cart drawer
+│   ├── CartItem.tsx            ← Individual cart item row
+│   ├── ErrorBoundary.tsx       ← React error boundary for crash recovery
+│   ├── LoadingPage.tsx         ← Full-page loading screen
+│   ├── LoadingSpinner.tsx      ← Inline loading spinner
+│   ├── NetworkError.tsx        ← Network failure UI
+│   ├── OfflineBanner.tsx       ← PWA offline notification banner
+│   ├── OptimizedImage.tsx      ← Image component with lazy loading + WebP
+│   ├── PageSkeleton.tsx        ← Skeleton loading variants (default/menu/admin/form)
+│   ├── SEOHead.tsx             ← Dynamic meta tags for SEO
+│   ├── GoogleMap.tsx           ← Embedded map component
+│
+│   ├── admin/                  ← Admin panel components
+│   │   ├── AdminSidebar.tsx    ← Sidebar navigation (filters items by role)
+│   │   ├── StatsCards.tsx      ← Dashboard KPI cards with trend indicators
+│   │   ├── OrdersTable.tsx     ← Orders list with status badges and filtering
+│   │   ├── OrderDetails.tsx    ← Side panel order detail view
+│   │   ├── CookDashboard.tsx   ← Kitchen card-based workflow view
+│   │   ├── FinancialDashboard.tsx ← Revenue/expense/refund overview
+│   │   ├── InventoryManagement.tsx ← Menu stock toggle
+│   │   ├── MenuItemForm.tsx    ← Add/edit menu item form
+│   │   ├── QRCodeGenerator.tsx ← QR code generator for tables
+│   │   ├── ReservationsList.tsx ← Reservations management
+│   │   ├── ContactMessages.tsx ← Contact inbox with read/delete
+│   │   ├── UserTable.tsx       ← User list with role display
+│   │   ├── PromoteUserForm.tsx ← Assign role to user by email
+│   │   ├── WaiterRecordSale.tsx ← Waiter manual sale recording form
+│   │   ├── MySales.tsx         ← Waiter's personal sales history
+│   │   │
+│   │   ├── financial/          ← Financial sub-components
+│   │   │   ├── SummaryCard.tsx      ← Single KPI card
+│   │   │   ├── FinancialCharts.tsx  ← Revenue/expense charts (Recharts)
+│   │   │   ├── ExpenseForm.tsx      ← Log an expense
+│   │   │   ├── ManualSaleModal.tsx  ← Record a manual sale (admin)
+│   │   │   ├── RefundModal.tsx      ← Issue a refund
+│   │   │   └── MpesaReconciliationPanel.tsx ← Trigger + show reconciliation status
+│   │   │
+│   │   ├── UserRoles/          ← User role management components
+│   │   ├── inventory/          ← Inventory sub-components
+│   │   ├── messages/           ← Messages sub-components
+│   │   └── reservations/       ← Reservations sub-components
+│
+│   ├── auth/                   ← Auth-related UI components
+│   ├── cart/                   ← Cart-specific components
+│   ├── contact/                ← Contact form sub-components
+│   ├── menu/                   ← Menu page sub-components
+│   ├── reservation/            ← Reservation form sub-components
+│   └── ui/                     ← shadcn/ui primitive components (Button, Dialog, etc.)
+
+├── contexts/                   ← React Context providers
+│   ├── auth/
+│   │   ├── AuthProvider.tsx    ← Wraps app in auth context
+│   │   ├── useAuthProvider.tsx ← Hook: session, roles, signIn, signOut logic
+│   │   ├── useAuth.tsx         ← Convenience hook: useContext(AuthContext)
+│   │   ├── types.ts            ← AuthContext TypeScript types
+│   │   └── index.ts            ← Re-exports
+│   └── cart/
+│       ├── CartContext.tsx      ← Cart state management (add/remove/clear)
+│       ├── useCart.tsx         ← Convenience hook
+│       ├── types.ts            ← CartItem, CartContext types
+│       └── index.ts            ← Re-exports
+
+├── hooks/                      ← Custom React hooks (data fetching + UI logic)
+│   ├── useMenuItems.tsx        ← Fetches menu items with React Query
+│   ├── useCategories.ts        ← Fetches menu categories
+│   ├── useOrders.tsx           ← Fetches and manages order data
+│   ├── useLightOrders.ts       ← Lightweight orders for kitchen (RPC-based)
+│   ├── useKitchenRealtime.ts   ← Supabase Realtime subscription for kitchen
+│   ├── useKitchenSound.ts      ← Manages kitchen sound on/off state
+│   ├── useMpesaTransaction.tsx ← Full STK Push flow state machine
+│   ├── useMpesaReconciliation.ts ← Triggers and monitors reconciliation
+│   ├── useFinancialData.tsx    ← Fetches financial_transactions with filters
+│   ├── useFinancialSummary.tsx ← Aggregates financial data for KPI cards
+│   ├── useManualSales.ts       ← Fetches manual_sales total
+│   ├── useRefunds.ts           ← Fetches refunds total
+│   ├── useMySales.ts           ← Waiter's own sales history
+│   ├── useStatsCardSummary.ts  ← Calls get_dashboard_stats() RPC
+│   ├── useChartData.ts         ← Transforms financial data for charts
+│   ├── useRateLimit.ts         ← Frontend rate limit indicator hook
+│   ├── useRoutePrefetch.ts     ← Prefetches route chunks on hover
+│   ├── use-mobile.tsx          ← Breakpoint detection hook
+│   └── use-toast.ts            ← Toast notification state
+
+├── integrations/               ← Third-party client configurations
+│   └── supabase/
+│       ├── client.ts           ← Singleton Supabase client (anon key)
+│       └── types.ts            ← Database TypeScript types (auto-generated)
+
+├── lib/                        ← Pure utility libraries
+│   ├── permissions.ts          ← RBAC: AppRole, Permission, hasPermission()
+│   ├── database.types.ts       ← TypeScript types matching DB schema
+│   ├── animations.ts           ← Framer Motion variant presets
+│   ├── formatters.ts           ← formatCurrency(), formatDate()
+│   ├── kitchenSound.ts         ← Web Audio API sound generation
+│   ├── orderStatus.ts          ← Order status labels and color mapping
+│   ├── storage.ts              ← Supabase Storage URL helpers
+│   └── utils.ts                ← cn() (clsx + tailwind-merge)
+
+├── services/                   ← External service integrations
+│   └── mpesaService.ts         ← initiateMpesaPayment(), checkPaymentStatus()
+
+├── types/                      ← Shared TypeScript type definitions
+│   └── admin.ts                ← AdminView union type
+
+└── utils/                      ← Utility functions
+    ├── exportUtils.ts          ← exportToJSON(), generateFinancialReport()
+    └── pdfExport.ts            ← exportToPDF() (jsPDF)
+```
+
+---
+
+## `supabase/` — Backend Configuration
+
+```
+supabase/
+├── config.toml                 ← Local Supabase project config
+├── env.example                 ← Edge Function environment template
+
+├── functions/                  ← Supabase Edge Functions (Deno)
+│   ├── _shared/
+│   │   ├── rateLimiter.ts      ← Upstash Redis rate limiting (shared by all functions)
+│   │   └── cors.ts             ← CORS header helper
+│   ├── mpesa-stk-push/
+│   │   └── index.ts            ← Initiate M-Pesa STK Push payment
+│   ├── mpesa-callback/
+│   │   └── index.ts            ← Receive Safaricom payment callback
+│   ├── mpesa-query-status/
+│   │   └── index.ts            ← Query payment status from Daraja
+│   ├── mpesa-reconcile/
+│   │   └── index.ts            ← Background reconciliation job
+│   ├── export-financial-data/
+│   │   └── index.ts            ← CSV export (admin-only, RBAC-guarded)
+│   └── send-contact-email/
+│       └── index.ts            ← Email sender for contact/reservation forms
+
+└── migrations/                 ← Ordered database migrations (see Database doc)
+    ├── 20250408_initial_schema.sql
+    ├── 20250409_mpesa_transactions.sql
+    ├── 20251024_..._user_roles.sql
+    ├── 20251208_..._reservations.sql
+    ├── 20260117_..._profiles.sql
+    ├── 20260303_..._light_orders_rpc.sql
+    ├── 20260311_fix_admin_update_rpc.sql
+    ├── 20260311_fix_reservations_update_rls.sql
+    ├── 20260311_mpesa_hardening.sql     ← Atomic RPCs, IP allowlist, HMAC
+    ├── 20260522_..._profiles_admin_rls.sql
+    ├── 20260613_financial_module_baseline.sql
+    ├── 20260616_rbac_fixes.sql
+    ├── 20260624_add_mpesa_idempotency_key.sql
+    ├── 20260624_fix_customer_phone_unique.sql
+    ├── 20260624_stats_rpc_and_bulk_inserts.sql
+    ├── 20260625_critical_concurrency_and_standardization.sql
+    └── add_waiter_role.sql
+```
+
+---
+
+## Key Architectural Conventions
+
+### Naming Conventions
+
+| Thing | Convention | Example |
+|-------|-----------|---------|
+| React components | PascalCase | `CookDashboard.tsx` |
+| Hooks | camelCase with `use` prefix | `useKitchenRealtime.ts` |
+| Types/interfaces | PascalCase | `AppRole`, `CartItem` |
+| DB functions | snake_case | `complete_mpesa_payment` |
+| DB tables | snake_case plural | `order_items`, `user_roles` |
+| Edge functions | kebab-case | `mpesa-stk-push` |
+
+### Import Aliases
+
+The `@` alias resolves to `src/`:
+
+```typescript
+import { supabase } from '@/integrations/supabase/client';
+import { hasPermission } from '@/lib/permissions';
+```
+
+Configured in `vite.config.ts:119-122` and `tsconfig.app.json`.

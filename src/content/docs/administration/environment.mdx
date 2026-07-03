@@ -1,0 +1,195 @@
+---
+title: "Environment Variables"
+description: "Complete reference for all required environment variables."
+sidebar:
+  order: 1
+---
+
+
+## Overview
+
+Mlami BBQ uses two categories of environment variables:
+
+1. **Frontend Variables (`VITE_*`)** — baked into the JavaScript bundle at build time. Must be set in Vercel before deploying. Safe to expose to the client (anon key, public URLs).
+
+2. **Edge Function Secrets** — server-side only. Never leave Supabase's infrastructure. Set in Supabase Dashboard → Settings → Edge Functions → Secrets.
+
+> ⚠️ **Critical:** `VITE_*` variables are compiled into the browser bundle. **Never store sensitive secrets** (service role key, M-Pesa credentials, Redis tokens) in `VITE_*` variables.
+
+---
+
+## Frontend Variables (`.env` / Vercel Dashboard)
+
+### `VITE_SUPABASE_URL`
+- **Required:** Yes
+- **Purpose:** The base URL for your Supabase project
+- **Where to find:** Supabase Dashboard → Settings → API → Project URL
+- **Format:** `https://your-project-ref.supabase.co`
+- **Used in:** `src/integrations/supabase/client.ts`, `src/pages/FinancialDashboard.tsx` (export URL construction)
+- **Notes:** Validated at startup in `src/main.tsx`. App shows a setup guide instead of crashing if missing.
+
+### `VITE_SUPABASE_ANON_KEY`
+- **Required:** Yes (also accepted as `VITE_SUPABASE_PUBLISHABLE_KEY` for backwards compatibility)
+- **Purpose:** The public-facing key for Supabase client SDK. Safe to expose — RLS controls what this key can access.
+- **Where to find:** Supabase Dashboard → Settings → API → anon public
+- **Used in:** `src/integrations/supabase/client.ts`
+- **Notes:** Validated at startup in `src/main.tsx`
+
+### `VITE_SENTRY_DSN`
+- **Required:** No (optional — Sentry only initializes when this is present)
+- **Purpose:** Error tracking DSN for Sentry
+- **Where to find:** Sentry Dashboard → Project Settings → SDK Setup → Client Keys
+- **Used in:** `src/main.tsx:7-15`
+- **Default:** Empty (Sentry disabled)
+
+### `VITE_APP_URL`
+- **Required:** No (used for canonical URLs and OG tags)
+- **Purpose:** The public production URL of the website
+- **Default:** `https://mlamibbq.com`
+- **Used in:** SEO components, canonical link generation
+
+---
+
+## Edge Function Secrets (Supabase Vault)
+
+Set in: **Supabase Dashboard → Settings → Edge Functions → Secrets**
+
+### `SUPABASE_URL`
+- **Required:** Yes
+- **Purpose:** Same as `VITE_SUPABASE_URL` but used inside Edge Functions
+- **Auto-injected:** Yes — Supabase automatically injects this for all Edge Functions
+
+### `SUPABASE_ANON_KEY`
+- **Required:** Yes (for user-context Supabase clients in Edge Functions)
+- **Auto-injected:** Yes — Supabase automatically injects this
+
+### `SUPABASE_SERVICE_ROLE_KEY`
+- **Required:** Yes
+- **Purpose:** Service role key — bypasses RLS. Used in Edge Functions that need elevated database access (payment processing, order creation).
+- **Where to find:** Supabase Dashboard → Settings → API → service_role secret
+- **Used in:** `mpesa-stk-push`, `mpesa-callback`, `mpesa-reconcile`
+- **⚠️ NEVER put this in a VITE_ variable**
+
+---
+
+## M-Pesa (Daraja) Credentials
+
+### `MPESA_CONSUMER_KEY`
+- **Required:** Yes (for payment processing)
+- **Purpose:** Daraja API consumer key
+- **Where to find:** Safaricom Developer Portal → My Apps → App Details
+- **Sandbox value:** Available after app creation at `developer.safaricom.co.ke`
+
+### `MPESA_CONSUMER_SECRET`
+- **Required:** Yes
+- **Purpose:** Daraja API consumer secret
+- **Where to find:** Safaricom Developer Portal → My Apps → App Details
+
+### `MPESA_SHORTCODE`
+- **Required:** Yes
+- **Purpose:** Business short code (paybill or till number)
+- **Sandbox:** `174379` (Safaricom test shortcode)
+- **Production:** Your registered Safaricom business shortcode
+
+### `MPESA_PASSKEY`
+- **Required:** Yes
+- **Purpose:** Daraja passkey used to generate the Base64 password for STK Push requests
+- **Sandbox:** `bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919`
+- **Production:** Provided by Safaricom upon going live
+
+### `MPESA_CALLBACK_URL`
+- **Required:** Yes
+- **Purpose:** Public URL that Safaricom will POST payment results to
+- **Format:** `https://your-project.supabase.co/functions/v1/mpesa-callback`
+- **Notes:** Must be publicly accessible. Safaricom cannot reach localhost.
+
+### `MPESA_CALLBACK_SECRET`
+- **Required:** Recommended (HMAC verification only active if set)
+- **Purpose:** Secret for verifying the HMAC-SHA256 signature on callbacks
+- **Generate:** `openssl rand -hex 32`
+- **Register with Safaricom:** Must be shared with Safaricom so they include the signature header
+
+### `MPESA_ENV`
+- **Required:** Yes
+- **Purpose:** Controls whether to use sandbox or production Daraja URLs
+- **Values:** `sandbox` or `production`
+- **Default:** `sandbox`
+
+### `MPESA_RECONCILE_SECRET`
+- **Required:** Yes (reconcile function fails to start without it)
+- **Purpose:** Bearer token that authorizes calls to the reconcile function
+- **Generate:** `openssl rand -hex 32`
+
+---
+
+## Rate Limiting (Upstash Redis)
+
+### `UPSTASH_REDIS_REST_URL`
+- **Required:** For rate limiting (fail-open if missing)
+- **Purpose:** Upstash Redis REST endpoint URL
+- **Where to find:** Upstash Console → Database → REST URL
+- **Format:** `https://xyz.upstash.io`
+
+### `UPSTASH_REDIS_REST_TOKEN`
+- **Required:** For rate limiting (fail-open if missing)
+- **Purpose:** Upstash Redis authentication token
+- **Where to find:** Upstash Console → Database → REST Token
+
+### `RATE_LIMIT_STK_IP`
+- **Default:** `5`
+- **Purpose:** Max STK Push requests per IP per minute
+- **Increase if:** Legitimate customers report 429 errors from the same office/NAT IP
+
+### `RATE_LIMIT_STK_PHONE`
+- **Default:** `2`
+- **Purpose:** Max STK Push requests per phone number per minute
+
+### `RATE_LIMIT_QUERY`
+- **Default:** `30`
+- **Purpose:** Max payment status query requests per IP per minute
+
+### `RATE_LIMIT_EMAIL`
+- **Default:** `5`
+- **Purpose:** Max contact email sends per IP per minute
+
+### `RATE_LIMIT_ADMIN`
+- **Default:** `10`
+- **Purpose:** Max requests to admin-only endpoints (export, reconcile) per IP per minute
+
+---
+
+## Email (Resend)
+
+### `RESEND_API_KEY`
+- **Required:** For email notifications (gracefully skipped if missing)
+- **Purpose:** Resend API key for sending contact and reservation emails
+- **Where to find:** Resend Dashboard → API Keys
+- **Notes:** If not set, the `send-contact-email` function returns `{emailSent: false}` without erroring
+
+---
+
+## Complete Reference Table
+
+| Variable | Location | Required | Sensitive |
+|----------|----------|----------|-----------|
+| `VITE_SUPABASE_URL` | Vercel / `.env` | ✅ | No |
+| `VITE_SUPABASE_ANON_KEY` | Vercel / `.env` | ✅ | No |
+| `VITE_SENTRY_DSN` | Vercel / `.env` | No | No |
+| `VITE_APP_URL` | Vercel / `.env` | No | No |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase Vault | ✅ | **Yes** |
+| `MPESA_CONSUMER_KEY` | Supabase Vault | ✅ | **Yes** |
+| `MPESA_CONSUMER_SECRET` | Supabase Vault | ✅ | **Yes** |
+| `MPESA_SHORTCODE` | Supabase Vault | ✅ | **Yes** |
+| `MPESA_PASSKEY` | Supabase Vault | ✅ | **Yes** |
+| `MPESA_CALLBACK_URL` | Supabase Vault | ✅ | No |
+| `MPESA_CALLBACK_SECRET` | Supabase Vault | Recommended | **Yes** |
+| `MPESA_ENV` | Supabase Vault | ✅ | No |
+| `MPESA_RECONCILE_SECRET` | Supabase Vault | ✅ | **Yes** |
+| `UPSTASH_REDIS_REST_URL` | Supabase Vault | No | No |
+| `UPSTASH_REDIS_REST_TOKEN` | Supabase Vault | No | **Yes** |
+| `RATE_LIMIT_STK_IP` | Supabase Vault | No | No |
+| `RATE_LIMIT_STK_PHONE` | Supabase Vault | No | No |
+| `RATE_LIMIT_QUERY` | Supabase Vault | No | No |
+| `RATE_LIMIT_EMAIL` | Supabase Vault | No | No |
+| `RATE_LIMIT_ADMIN` | Supabase Vault | No | No |
+| `RESEND_API_KEY` | Supabase Vault | No | **Yes** |

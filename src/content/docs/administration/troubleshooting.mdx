@@ -1,0 +1,287 @@
+---
+title: "Troubleshooting"
+description: "Common issues, diagnostics, and recovery procedures."
+sidebar:
+  order: 4
+---
+
+
+## Diagnostic Resources
+
+| Resource | Location | What It Shows |
+|----------|----------|---------------|
+| Supabase Logs | Dashboard → Edge Functions → Logs | All Edge Function stdout/stderr |
+| Supabase DB | Dashboard → Table Editor | Live data in all tables |
+| Supabase SQL Editor | Dashboard → SQL Editor | Run diagnostic queries |
+| Vercel Logs | Vercel Dashboard → Deployments → [Deploy] → Logs | Build errors |
+| Browser Console | F12 → Console | Frontend JS errors |
+| Browser Network | F12 → Network | API request/response details |
+| Sentry | sentry.io | Runtime errors with stack traces |
+
+---
+
+## Common Issues
+
+### ❌ App shows "Configuration Required" screen
+
+**Cause:** `VITE_SUPABASE_URL` or `VITE_SUPABASE_ANON_KEY` is missing from the build environment.
+
+**Fix:**
+1. In Vercel → Project Settings → Environment Variables, verify both variables are set
+2. Trigger a new deployment (Vite bakes variables at build time — a redeploy is required)
+
+**Source:** `src/main.tsx:27-60`
+
+---
+
+### ❌ Login fails with "Invalid email or password" even with correct credentials
+
+**Possible causes:**
+
+1. **User not confirmed:** Check Supabase → Authentication → Users — user must have email confirmed status
+2. **Wrong Supabase project:** Verify `VITE_SUPABASE_URL` points to the correct project
+3. **Auth provider misconfigured:** Verify Email provider is enabled in Supabase → Authentication → Providers
+
+---
+
+### ❌ Admin panel redirects to home after login
+
+**Cause:** User has no role in `user_roles` table, or the role is not `admin`, `cook`, or `waiter`.
+
+**Fix:**
+```sql
+-- Check user's roles
+SELECT * FROM public.user_roles WHERE user_id = (
+  SELECT id FROM auth.users WHERE email = 'your-email@example.com'
+);
+
+-- Assign admin role if missing
+SELECT public.set_user_as_admin('your-email@example.com');
+```
+
+---
+
+### ❌ STK Push returns "Missing M-Pesa API credentials"
+
+**Cause:** M-Pesa secrets not set in Supabase Edge Function secrets.
+
+**Fix:**
+1. Go to Supabase Dashboard → Settings → Edge Functions → Secrets
+2. Add: `MPESA_CONSUMER_KEY`, `MPESA_CONSUMER_SECRET`, `MPESA_SHORTCODE`, `MPESA_PASSKEY`
+3. Redeploy the `mpesa-stk-push` function: `supabase functions deploy mpesa-stk-push`
+
+---
+
+### ❌ STK Push returns "PRICE_MISMATCH"
+
+**Cause:** The amount sent from the frontend doesn't match the server-computed total from DB prices.
+
+**Fix:**
+1. Check if menu item prices in `menu_items` table match what the customer sees
+2. Look at the Edge Function log for `price_mismatch` event — shows `clientAmount` and `serverAmount`
+3. If prices were recently updated, clearing the browser cart and rebuilding it resolves the issue
+
+---
+
+### ❌ Payment completes but no order appears in kitchen
+
+**Possible causes and fixes:**
+
+1. **Trigger case mismatch:** Check that orders are being set to `'Completed'` (PascalCase) not `'completed'`
+2. **Realtime not enabled:** Go to Supabase → Database → Replication → verify `orders` table is enabled
+3. **Debounce delay:** Kitchen cache invalidation is debounced 2.5s — wait ~5 seconds
+4. **Callback not reaching function:** Check Supabase Function logs for `mpesa-callback` — if no logs exist, Safaricom may not be reaching the URL
+
+**Diagnostic query:**
+```sql
+-- Check if order was created
+SELECT o.id, o.status, m.status AS payment_status, m.mpesa_receipt_number
+FROM mpesa_transactions m
+LEFT JOIN orders o ON o.id = m.order_id
+WHERE m.status = 'COMPLETED'
+ORDER BY m.created_at DESC
+LIMIT 5;
+```
+
+---
+
+### ❌ Callback function returns errors
+
+**Check these logs in Supabase → mpesa-callback function:**
+
+| Log Event | Meaning |
+|-----------|---------|
+| `ip_blocked` | Request from non-Safaricom IP in production |
+| `missing_hmac_signature` | No `x-mpesa-signature` header |
+| `invalid_hmac_signature` | Signature doesn't match MPESA_CALLBACK_SECRET |
+| `missing_stk_callback_body` | Malformed callback payload |
+| `complete_payment_rpc_failed` | Database RPC error |
+| `transaction_not_found` | No matching checkout_request_id in DB |
+
+**IP blocking issue in production:**
+- Verify `MPESA_ENV=production` is set
+- Confirm the callback request is coming from Safaricom's known IPs
+- Check if Supabase is correctly forwarding the client IP in `x-forwarded-for`
+
+---
+
+### ❌ PENDING transactions never resolve
+
+**Cause:** Safaricom callback never reached the function (network, IP block, etc.)
+
+**Fix:** Run the reconciliation manually:
+```bash
+curl -X POST \
+  -H "Authorization: Bearer YOUR_RECONCILE_SECRET" \
+  https://YOUR_PROJECT.supabase.co/functions/v1/mpesa-reconcile
+```
+
+Or trigger from Financial Dashboard → M-Pesa Reconciliation Panel → "Reconcile Now"
+
+**Verify PENDING transactions:**
+```sql
+SELECT id, phone_number, amount, checkout_request_id, created_at
+FROM mpesa_transactions
+WHERE status = 'PENDING'
+ORDER BY created_at DESC;
+```
+
+---
+
+### ❌ Rate limiting is not working
+
+**Possible cause:** Upstash Redis credentials not set.
+
+**Check:**
+1. Supabase Function logs will show: `"Upstash Redis not configured. Rate limiting is disabled (Fail Open)."`
+2. If this message appears, add `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` to Supabase secrets
+
+---
+
+### ❌ Financial dashboard shows incorrect revenue
+
+**Common causes:**
+
+1. **Order status not PascalCase:** The `record_order_revenue` trigger only fires for `'Completed'` (capital C). Run:
+   ```sql
+   SELECT status, COUNT(*) FROM orders GROUP BY status;
+   ```
+   If you see `'completed'` (lowercase), run:
+   ```sql
+   UPDATE orders SET status = 'Completed' WHERE status = 'completed';
+   ```
+
+2. **Manual sales not appearing:** Check that `manual_sales` records have been inserted and the trigger fired:
+   ```sql
+   SELECT ms.id, ms.amount, ft.id AS ft_id
+   FROM manual_sales ms
+   LEFT JOIN financial_transactions ft ON ft.description LIKE '%Manual sale%'
+   AND ft.transaction_date = ms.sale_date
+   ORDER BY ms.created_at DESC;
+   ```
+
+---
+
+### ❌ Contact/reservation emails not sent
+
+**Cause:** `RESEND_API_KEY` not configured, or Resend email domain not verified.
+
+**Check:** The `send-contact-email` function logs should show `"RESEND_API_KEY is not configured"`.
+
+**Fix:**
+1. Create account at resend.com
+2. Create an API key
+3. Set `RESEND_API_KEY` in Supabase secrets
+4. Verify your sending domain in Resend Dashboard (for production; sandbox uses `onboarding@resend.dev`)
+
+---
+
+### ❌ Fonts not loading in production
+
+**Symptoms:** Text shows in system default font, not the configured typeface.
+
+**Cause:** Self-hosted fonts in `public/fonts/` not being served, or CSP `font-src` not allowing the origin.
+
+**Fix:**
+1. Verify font files exist in `public/fonts/`
+2. Verify `vercel.json` allows 1-year caching for `/fonts/`
+3. Verify `vercel.json` CSP `font-src` includes `'self'`
+4. Check browser Network tab for 404s on font files
+
+---
+
+### ❌ PWA not updating — users see old version
+
+**Cause:** Service worker is caching the old bundle.
+
+**Design:** The SW is configured with `skipWaiting: true` and `clientsClaim: true`, which forces the new SW to activate immediately. In practice, some browsers may delay this.
+
+**Fix:** Tell users to:
+1. Open DevTools → Application → Service Workers
+2. Click "Update" or "Unregister"
+3. Hard reload (Ctrl+Shift+R)
+
+---
+
+## Recovery Procedures
+
+### Recover Stuck Payments
+```sql
+-- Find all PENDING transactions older than 30 minutes
+SELECT id, phone_number, amount, checkout_request_id, created_at
+FROM mpesa_transactions
+WHERE status = 'PENDING'
+AND created_at < now() - INTERVAL '30 minutes';
+
+-- Manually fail a transaction that Daraja confirms failed
+SELECT public.fail_mpesa_payment(
+  'CHECKOUT_REQUEST_ID',
+  'Manually failed after investigation',
+  NULL
+);
+```
+
+### Recover Orphaned Orders (no corresponding payment)
+```sql
+-- Find orders without a corresponding completed mpesa transaction
+SELECT o.id, o.total, o.created_at
+FROM orders o
+LEFT JOIN mpesa_transactions m ON m.order_id = o.id
+WHERE m.id IS NULL AND o.payment_method = 'mpesa'
+AND o.created_at > now() - INTERVAL '24 hours';
+```
+
+### Fix Duplicate Revenue Entries
+```sql
+-- Find duplicate revenue entries for the same order
+SELECT order_id, COUNT(*) as count, SUM(amount) as total_amount
+FROM financial_transactions
+WHERE transaction_type = 'revenue' AND order_id IS NOT NULL
+GROUP BY order_id
+HAVING COUNT(*) > 1;
+
+-- Delete duplicate entries (keep the oldest)
+DELETE FROM financial_transactions
+WHERE id IN (
+  SELECT id FROM (
+    SELECT id, ROW_NUMBER() OVER (PARTITION BY order_id ORDER BY id) as rn
+    FROM financial_transactions
+    WHERE transaction_type = 'revenue' AND order_id IS NOT NULL
+  ) sub
+  WHERE rn > 1
+);
+```
+
+---
+
+## Known Limitations
+
+| Limitation | Details | Workaround |
+|-----------|---------|-----------|
+| No automated test suite | All testing is manual | See [Testing Guide](./17-testing.md) for procedures |
+| Realtime roles not refreshed | Role changes don't apply to active sessions | User must log out and back in |
+| `unsafe-inline` in CSP | Required for Framer Motion and Tailwind inline styles | Future improvement: nonce-based CSP |
+| In-memory cart only | Cart is lost on page refresh | Accepted limitation for current scope |
+| No customer order tracking page | Customers can't track order status | Future improvement |
+| `MPESA_CALLBACK_SECRET` optional | HMAC verification disabled if not set | Must set in production |
+| IP logging includes full IP | Potential PII concern | Mask to first 2 octets in logs |

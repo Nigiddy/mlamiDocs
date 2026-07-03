@@ -1,0 +1,265 @@
+---
+title: "Security Overview"
+description: "Six-layer security model from network to database."
+sidebar:
+  order: 1
+---
+
+
+## Security Architecture Summary
+
+Security is implemented at multiple independent layers. A failure at any single layer does not compromise the entire system.
+
+```
+Layer 1 — Network:     CSP headers, X-Frame-Options, CORS allowlist
+Layer 2 — Rate Limit:  Upstash Redis sliding-window per IP and per phone
+Layer 3 — Auth:        Supabase JWT, role checks before rendering
+Layer 4 — API:         HMAC signature verification, IP allowlist (M-Pesa)
+Layer 5 — Database:    Row-Level Security on every table
+Layer 6 — Code:        SECURITY DEFINER RPCs, no trust of client-reported prices
+```
+
+---
+
+## 1. Transport Security (HTTPS)
+
+All traffic is served over HTTPS enforced by:
+- Vercel (automatic TLS for all deployments)
+- `upgrade-insecure-requests` in the CSP header
+- Supabase endpoints are HTTPS-only
+
+---
+
+## 2. Content Security Policy (CSP)
+
+Defined in `vercel.json`:
+
+```
+default-src 'self';
+script-src 'self' 'unsafe-inline';
+style-src 'self' 'unsafe-inline';
+font-src 'self';
+img-src 'self' data: blob: https://pzlfeqyzuftvrujcjetq.supabase.co https://*.supabase.co https://www.google.com https://maps.googleapis.com https://maps.gstatic.com;
+connect-src 'self' https://pzlfeqyzuftvrujcjetq.supabase.co wss://pzlfeqyzuftvrujcjetq.supabase.co https://api.safaricom.co.ke https://sandbox.safaricom.co.ke;
+frame-src https://www.openstreetmap.org https://www.google.com https://maps.google.com;
+object-src 'none';
+base-uri 'self';
+form-action 'self';
+upgrade-insecure-requests;
+```
+
+The `connect-src` explicitly allows:
+- Supabase REST and WebSocket (for Realtime)
+- Safaricom Daraja API (sandbox and production)
+
+> ⚠️ **Known weakness:** `'unsafe-inline'` is required for Tailwind and Framer Motion inline styles. A future improvement would be to use a nonce-based approach. See [Future Roadmap](./19-future-roadmap.md).
+
+---
+
+## 3. Additional Security Headers
+
+All responses include (via `vercel.json`):
+
+| Header | Value | Purpose |
+|--------|-------|---------|
+| `X-Content-Type-Options` | `nosniff` | Prevents MIME sniffing |
+| `X-Frame-Options` | `DENY` | Prevents clickjacking |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` | Limits referrer leakage |
+| `Permissions-Policy` | `camera=(), microphone=(), geolocation=()` | Disables unused browser APIs |
+
+---
+
+## 4. CORS
+
+Edge Functions (`mpesa-stk-push`) implement an explicit CORS allowlist:
+
+```typescript
+const ALLOWED_ORIGINS = [
+  "https://mlamibbq.com",
+  "https://www.mlamibbq.com",
+];
+```
+
+Requests from any other origin are responded to with the production domain in the `Access-Control-Allow-Origin` header, effectively blocking cross-origin reads.
+
+The `send-contact-email` function uses `"*"` for CORS — acceptable because it does not return sensitive data and the Resend API key is a server-side secret.
+
+---
+
+## 5. Authentication Security
+
+### JWT-Based Sessions
+Supabase Auth issues short-lived JWTs (default 1 hour) that are automatically refreshed. The anon key is safe to expose in the client — it has no elevated permissions beyond what RLS allows for the `anon` role.
+
+### No Service Role Key in Browser
+The `SUPABASE_SERVICE_ROLE_KEY` is **never exposed to the browser**. It is only used in Edge Functions (server-side only).
+
+### User Enumeration Prevention
+The login error handler returns a generic message regardless of whether the email exists:
+```typescript
+description: 'Invalid email or password. Please try again.'
+```
+
+---
+
+## 6. Row-Level Security (RLS)
+
+RLS is enabled on **every database table**. Even if the frontend is compromised, the database enforces access independently.
+
+### Key Policy Examples
+
+```sql
+-- Only admins see financial data
+USING (public.has_role(auth.uid(), 'admin'))
+
+-- Waiters only see their own sales
+USING (recorded_by = auth.uid() AND has_role(auth.uid(), 'waiter'))
+
+-- Service role bypasses RLS for Edge Functions
+TO service_role USING (true)
+```
+
+### `has_role()` Function
+
+The security-definer helper function that powers all RLS policies:
+
+```sql
+CREATE OR REPLACE FUNCTION public.has_role(_user_id UUID, _role app_role)
+RETURNS BOOLEAN LANGUAGE SQL STABLE SECURITY DEFINER AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.user_roles
+    WHERE user_id = _user_id AND role = _role
+  )
+$$;
+```
+
+`SECURITY DEFINER` means it runs with the function owner's privileges — it can query `user_roles` even when the current user's RLS policy would otherwise block it.
+
+---
+
+## 7. M-Pesa Callback Security
+
+The callback endpoint is protected by multiple layers:
+
+### IP Allowlist (Production)
+```typescript
+const SAFARICOM_IP_RANGES = [
+  "196.201.214.200",
+  "196.201.214.206",
+  "196.201.213.114",
+  // ... 12 total
+];
+
+if (isProd && !isKnownSafaricomIp(clientIp)) {
+  return jsonResponse({ ResultCode: 1, ResultDesc: "Unauthorized source" }, 403);
+}
+```
+
+### HMAC-SHA256 Signature Verification
+If `MPESA_CALLBACK_SECRET` is configured, every callback is verified:
+
+```typescript
+async function verifyHmacSignature(secret, payload, signature): Promise<boolean> {
+  const keyMaterial = await crypto.subtle.importKey("raw", encode(secret), ...);
+  return crypto.subtle.verify("HMAC", keyMaterial, hexToUint8Array(signature), encode(payload));
+}
+```
+
+If the signature doesn't match, the request is rejected with 401.
+
+### PII Protection in Logs
+Log events in `mpesa-callback` deliberately omit sensitive fields (phone numbers, receipt numbers) and only log correlation IDs and result codes.
+
+---
+
+## 8. Server-Side Price Validation
+
+Client-reported prices are **never trusted**. The `mpesa-stk-push` function:
+
+1. Fetches authoritative prices from `menu_items` using the item IDs
+2. Recomputes the total server-side
+3. Rejects if `|clientAmount - serverAmount| > 1` (±KES 0.01 tolerance for rounding)
+
+This prevents manipulation attacks where a user modifies the cart amount before checkout.
+
+---
+
+## 9. Input Validation
+
+### Frontend
+- React Hook Form with Zod schemas validates all user inputs before submission
+- Phone numbers are normalized and validated against Kenyan format regex
+
+### Backend (Edge Functions)
+- All inputs validated before any Daraja API call
+- Amount range check: KES 1–150,000 (Safaricom limit)
+- Phone format validated with `^254(1|7)\d{8}$` regex
+- JSON body parse errors handled explicitly
+- Unknown item IDs rejected
+
+---
+
+## 10. Rate Limiting
+
+See [Rate Limiting](./13-rate-limiting.md) for full details.
+
+| Endpoint | Limit | Window |
+|----------|-------|--------|
+| `mpesa-stk-push` (by IP) | 5 requests | 1 minute |
+| `mpesa-stk-push` (by phone) | 2 requests | 1 minute |
+| `mpesa-query-status` | 30 requests | 1 minute |
+| `send-contact-email` | 5 requests | 1 minute |
+| `export-financial-data` | 10 requests | 1 minute |
+| `mpesa-reconcile` | 5 requests | 1 minute |
+
+**Fail-open strategy:** If Redis is unavailable, rate limiting is bypassed with a warning log. This prioritizes availability over rate limiting during Redis outages.
+
+---
+
+## 11. Secrets Management
+
+| Secret | Storage | Access |
+|--------|---------|--------|
+| `VITE_SUPABASE_URL` | Vercel Environment Variables | Build-time baked into bundle |
+| `VITE_SUPABASE_ANON_KEY` | Vercel Environment Variables | Build-time baked into bundle |
+| `VITE_SENTRY_DSN` | Vercel Environment Variables | Build-time baked into bundle |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase Vault | Edge Functions only |
+| `MPESA_CONSUMER_KEY` | Supabase Vault | Edge Functions only |
+| `MPESA_CONSUMER_SECRET` | Supabase Vault | Edge Functions only |
+| `MPESA_PASSKEY` | Supabase Vault | Edge Functions only |
+| `MPESA_CALLBACK_SECRET` | Supabase Vault | Edge Functions only |
+| `MPESA_RECONCILE_SECRET` | Supabase Vault | Edge Functions only |
+| `UPSTASH_REDIS_REST_TOKEN` | Supabase Vault | Edge Functions only |
+| `RESEND_API_KEY` | Supabase Vault | Edge Functions only |
+
+---
+
+## 12. Idempotency and Replay Protection
+
+- Client-generated UUID idempotency keys prevent duplicate STK Push charges
+- Partial UNIQUE INDEX on `idempotency_key` prevents duplicate DB records
+- `FOR UPDATE` row lock in `complete_mpesa_payment()` prevents duplicate orders from concurrent callbacks
+- The `fail_mpesa_payment()` function checks for terminal status before updating — safe to call multiple times
+
+---
+
+## 13. Security Checklist
+
+| Item | Status |
+|------|--------|
+| HTTPS enforced | ✅ |
+| CSP header set | ✅ |
+| X-Frame-Options: DENY | ✅ |
+| X-Content-Type-Options: nosniff | ✅ |
+| Permissions-Policy set | ✅ |
+| RLS on all tables | ✅ |
+| Service role key server-only | ✅ |
+| M-Pesa IP allowlist | ✅ (production) |
+| HMAC callback verification | ✅ (when secret set) |
+| Server-side price validation | ✅ |
+| Rate limiting | ✅ |
+| Input validation (frontend + backend) | ✅ |
+| User enumeration prevention | ✅ |
+| PII protection in logs | ✅ |
+| Idempotency + replay protection | ✅ |
+| Structured secrets management | ✅ |

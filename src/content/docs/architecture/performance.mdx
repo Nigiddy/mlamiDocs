@@ -1,0 +1,301 @@
+---
+title: "Performance"
+description: "Code splitting, caching, compression, and PWA optimizations."
+sidebar:
+  order: 5
+---
+
+
+## Overview
+
+Performance in Mlami BBQ is addressed at every layer: build-time, network delivery, rendering, data fetching, and database. This document explains every optimization that has been implemented and why.
+
+---
+
+## 1. Code Splitting
+
+**What:** All page components are lazy-loaded. Heavy admin-only components are split into separate chunks.
+
+**How:**
+```typescript
+// All pages use React.lazy()
+const Menu = lazy(() => import("./pages/Menu"));
+const Admin = lazy(() => import("./pages/Admin"));
+
+// Heavy admin components are lazy-loaded within Admin.tsx
+const FinancialDashboard = lazy(() => import('@/components/admin/FinancialDashboard'));
+const CookDashboard = lazy(() => import('@/components/admin/CookDashboard'));
+```
+
+**Manual Chunk Groups (`vite.config.ts`):**
+
+| Chunk | What | When Loaded |
+|-------|------|-------------|
+| `vendor-react` | React, React-DOM, React Router | All pages |
+| `vendor-supabase` | Supabase client | When any data is needed |
+| `vendor-motion` | Framer Motion | Pages with animations |
+| `vendor-query` | React Query | All data-fetching pages |
+| `vendor-radix` | All Radix UI components | When a modal/menu is used |
+| `vendor-charts` | Recharts | Admin/Financial Dashboard only |
+| `vendor-pdf` | jsPDF, jsPDF-autotable | Only when export is triggered |
+
+**Impact:** A customer visiting only the menu page never downloads the charting or PDF libraries.
+
+---
+
+## 2. Compression
+
+**What:** All static assets are pre-compressed at build time.
+
+```typescript
+// vite.config.ts — production only
+compression({ algorithms: ['gzip'] }),
+compression({ algorithms: ['brotliCompress'] })
+```
+
+Produces `.gz` and `.br` files alongside every JS/CSS/SVG asset. Vercel automatically serves the pre-compressed version based on the `Accept-Encoding` header.
+
+**Impact:** Brotli achieves 60-80% size reduction over uncompressed for JavaScript. Typical reduction: a 200KB chunk becomes ~40KB over the wire.
+
+---
+
+## 3. React Query Caching
+
+**What:** All data fetches go through React Query, which maintains a client-side cache with configurable staleness.
+
+**Global Config:**
+```typescript
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 3,
+      retryDelay: attemptIndex => Math.min(1000 * 2 ** attemptIndex, 30000),
+      staleTime: 5 * 60 * 1000, // 5 minutes default
+    },
+  },
+});
+```
+
+**Specific Staleness:**
+- Menu items: 5 minutes (rarely change during service)
+- Orders: 30 seconds (Realtime handles immediate updates)
+- Financial data: 5 minutes (historical)
+
+**Impact:** Navigating between pages doesn't re-fetch data if it's still fresh. A customer going back and forth between home and menu doesn't make redundant API calls.
+
+---
+
+## 4. Suspense + Skeleton Loading
+
+**What:** Every lazy-loaded route shows a skeleton UI while loading.
+
+```typescript
+const SuspenseWrapper = ({ children, variant }) => (
+  <Suspense fallback={<PageSkeleton variant={variant} />}>
+    {children}
+  </Suspense>
+);
+```
+
+**Skeleton variants:** `default`, `menu`, `admin`, `form` — each mimics the layout of the page being loaded.
+
+**Impact:** Users see content shapes immediately instead of a blank white page, significantly improving perceived performance.
+
+---
+
+## 5. Lazy Loading + Route Prefetching
+
+**What:** Routes are prefetched when the user hovers over navigation links.
+
+**How:** The `useRoutePrefetch` hook calls `import()` for the target route's chunk on mouseover of nav links, giving the browser a head start before the user clicks.
+
+**Source:** `src/hooks/useRoutePrefetch.ts`
+
+---
+
+## 6. Image Optimization
+
+### OptimizedImage Component
+**File:** `src/components/OptimizedImage.tsx`
+
+- Renders images with `loading="lazy"` attribute
+- Provides `srcset` for different resolutions
+- Shows a placeholder/skeleton while loading
+- Handles errors gracefully
+
+### WebP Format
+- All menu item images should be stored as WebP in Supabase Storage
+- Vite's `globPatterns` includes `*.webp` for service worker precaching
+
+### Supabase Image Transform
+Supabase Storage supports on-the-fly image transforms (resize, quality, format). Future improvement: use transform URLs to serve optimally sized images.
+
+---
+
+## 7. Service Worker (PWA)
+
+**What:** Workbox service worker with multiple caching strategies.
+
+**Config (`vite.config.ts`):**
+```typescript
+VitePWA({
+  registerType: 'autoUpdate',
+  workbox: {
+    skipWaiting: true,     // New SW activates immediately
+    clientsClaim: true,    // Takes control of existing tabs
+    globPatterns: ['**/*.{js,css,html,ico,png,svg,jpg,jpeg,webp,woff2}'],
+    runtimeCaching: [
+      {
+        urlPattern: /\.supabase\.co\/storage\/.*/i,
+        handler: 'CacheFirst',
+        options: {
+          cacheName: 'supabase-images',
+          expiration: { maxEntries: 100, maxAgeSeconds: 30 * 24 * 60 * 60 }
+        }
+      }
+    ],
+    navigateFallbackDenylist: [
+      /^\/rest\//, /^\/auth\//, /^\/functions\//,
+      /https:\/\/.*\.supabase\.co\//i,
+    ]
+  }
+})
+```
+
+**Strategies:**
+- **Precache:** All static assets (JS, CSS, images) — served from cache, updated in background
+- **CacheFirst (30 days):** Supabase Storage images — long-lived assets rarely change
+- **Network-first (implicit):** All Supabase API calls — excluded from SW interception
+
+**Critical design:** The `navigateFallbackDenylist` prevents the service worker from intercepting Supabase REST, auth, and Edge Function calls — a bug that would cause POST requests to return cached `index.html` responses.
+
+---
+
+## 8. Memoization
+
+**What:** Expensive computations are memoized where appropriate.
+
+- React Query results are inherently memoized (cached until stale)
+- Framer Motion variant objects are defined outside render functions to prevent recreation
+- Stable refs (`useRef`) are used for callbacks passed to long-lived subscriptions to prevent unnecessary re-subscriptions
+
+---
+
+## 9. Debouncing
+
+**What:** The kitchen Realtime event handler is debounced.
+
+```typescript
+const triggerInvalidations = () => {
+  if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+  debounceTimerRef.current = setTimeout(() => {
+    queryClient.invalidateQueries({ queryKey: ['orders'] });
+  }, 2500); // Batch rapid events into a single refetch
+};
+```
+
+**Impact:** If a cook quickly updates 5 orders in succession, the kitchen dashboard only refetches the orders list once (after 2.5 seconds of inactivity), not 5 times.
+
+---
+
+## 10. Server-Side Aggregation
+
+**What:** Dashboard KPI stats are computed in the database, not the browser.
+
+The `get_dashboard_stats()` RPC performs all aggregations in a single PostgreSQL query:
+- Active order count
+- Completed today count
+- Total revenue (orders + manual sales)
+- Revenue trend (last 7 days vs prior 7 days)
+- Completed trend
+
+**Before:** Frontend fetched all orders and computed stats in JavaScript
+**After:** One RPC call returns pre-aggregated JSON
+
+**Impact:** Dramatically reduces data transfer and client-side CPU usage at scale.
+
+---
+
+## 11. Bulk SQL Operations
+
+**What:** Order items are inserted with a single bulk SQL statement instead of a loop.
+
+```sql
+-- Migration: 20260624_stats_rpc_and_bulk_inserts.sql
+INSERT INTO order_items (order_id, menu_item_id, quantity, price)
+SELECT
+  v_order_id,
+  (item->>'id')::INTEGER,
+  (item->>'quantity')::INTEGER,
+  (item->>'price')::INTEGER
+FROM jsonb_array_elements(p_items) AS item;
+```
+
+**Before:** A loop with a separate INSERT per item (N database round-trips)
+**After:** Single INSERT with SELECT (1 database round-trip)
+
+**Impact:** Significant reduction in order creation time for large orders.
+
+---
+
+## 12. Static Asset Caching
+
+**What:** Immutable assets are cached for 1 year.
+
+```json
+// vercel.json
+{
+  "source": "/assets/(.*)",
+  "headers": [{
+    "key": "Cache-Control",
+    "value": "public, max-age=31536000, immutable"
+  }]
+}
+```
+
+Vite's build appends content hashes to asset filenames (e.g., `vendor-react-abc123.js`). Since the hash changes when content changes, it's safe to cache forever.
+
+---
+
+## 13. Font Loading
+
+**What:** Fonts are self-hosted as WOFF2 files.
+
+Self-hosted fonts eliminate:
+- Third-party DNS lookups
+- Render-blocking cross-origin requests
+- CSP issues with external font providers
+
+**Location:** `public/fonts/`
+
+---
+
+## 14. Error Boundary
+
+**What:** The app is wrapped in an `ErrorBoundary` component that catches runtime errors and shows a fallback UI instead of a blank white page.
+
+```tsx
+// src/components/ErrorBoundary.tsx
+class ErrorBoundary extends React.Component {
+  // catches render errors, shows user-friendly fallback
+}
+```
+
+---
+
+## Performance Summary
+
+| Optimization | Category | Impact |
+|-------------|----------|--------|
+| Code splitting (lazy routes + manual chunks) | Bundle | Large JS reduction for public pages |
+| Brotli/Gzip compression | Network | 60-80% transfer reduction |
+| React Query caching (5-min staleTime) | Network | Eliminates redundant API calls |
+| Service worker precaching | Network | Instant load on repeat visits |
+| Skeleton loading | Perceived performance | Eliminates blank screens |
+| Route prefetching on hover | Perceived performance | Instant navigation |
+| `get_dashboard_stats()` RPC | Database | N queries → 1 query |
+| Bulk order items INSERT | Database | N round-trips → 1 |
+| 2.5s Realtime debounce | Rendering | Batches re-renders |
+| Self-hosted WOFF2 fonts | Network | Eliminates cross-origin font requests |
+| 1-year immutable asset cache | Network | Zero re-download on revisit |
+| WebP images + CacheFirst | Network | Long-lived image cache |

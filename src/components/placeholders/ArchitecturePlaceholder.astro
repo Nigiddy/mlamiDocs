@@ -1,0 +1,59 @@
+---
+// ArchitecturePlaceholder.astro
+interface Props {
+  caption?: string;
+  height?: string;
+}
+const { caption = 'Architecture diagram · coming soon', height = '320px' } = Astro.props;
+---
+<div class="arch-placeholder" style={`height: ${height}`}>
+  <div class="arch-grid">
+    {Array.from({ length: 16 }).map((_, i) => (
+      <div class="arch-node" key={i} style={`opacity: ${0.1 + (i % 4) * 0.07}`} />
+    ))}
+  </div>
+  <div class="arch-overlay">
+    <div class="arch-icon">⬡</div>
+    <div class="arch-label">{caption}</div>
+  </div>
+</div>
+
+<style>
+.arch-placeholder {
+  position: relative;
+  background: var(--placeholder-bg);
+  border: 1px dashed var(--placeholder-border);
+  border-radius: var(--mlami-radius-xl);
+  margin: 1.5rem 0;
+  overflow: hidden;
+}
+.arch-grid {
+  position: absolute; inset: 0;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  grid-template-rows: repeat(4, 1fr);
+  gap: 1rem;
+  padding: 1.5rem;
+}
+.arch-node {
+  border: 1px solid var(--sl-color-accent);
+  border-radius: var(--mlami-radius-md);
+  background: hsla(28, 40%, 30%, 0.05);
+}
+.arch-overlay {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 0.75rem;
+}
+.arch-icon {
+  font-size: 2.5rem;
+  color: var(--sl-color-accent);
+  opacity: 0.4;
+}
+.arch-label {
+  font-size: 0.78rem;
+  color: var(--placeholder-text);
+  font-family: var(--sl-font-mono);
+}
+</style>

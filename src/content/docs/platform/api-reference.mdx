@@ -1,0 +1,296 @@
+---
+title: "API Reference"
+description: "Complete reference for all Supabase Edge Functions."
+sidebar:
+  order: 4
+---
+
+
+All Edge Functions are deployed to:
+`https://YOUR_PROJECT_REF.supabase.co/functions/v1/`
+
+All responses include `Content-Type: application/json` unless noted.
+
+---
+
+## `POST /mpesa-stk-push`
+
+**Auth:** Supabase anon key (`Authorization: Bearer <anon-key>`)  
+**Purpose:** Initiate an M-Pesa STK Push payment
+
+### Request Body
+
+```json
+{
+  "phoneNumber": "0712345678",
+  "amount": 1500,
+  "tableNumber": "3",
+  "items": [
+    { "id": 1, "name": "Brisket Platter", "price": 1899, "quantity": 1 }
+  ],
+  "idempotencyKey": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `phoneNumber` | string | ✅ | Kenyan phone (07XX, 7XX, 254XX, +254XX formats) |
+| `amount` | integer | ✅ | Amount in cents (KES × 100). Range: 100 to 15,000,000 |
+| `tableNumber` | string | No | Table identifier |
+| `items` | array | ✅ | Cart items for server-side price validation |
+| `items[].id` | integer | ✅ | `menu_items.id` |
+| `items[].price` | integer | ✅ | Client price in cents (validated against DB) |
+| `items[].quantity` | integer | ✅ | Quantity (>0) |
+| `idempotencyKey` | string | No | UUID v4. Prevents duplicate charges on retry |
+
+### Response — Success (200)
+
+```json
+{
+  "success": true,
+  "message": "STK Push sent. Please check your phone to complete payment.",
+  "checkoutRequestId": "ws_CO_123456789",
+  "merchantRequestId": "abc-def-123",
+  "transactionId": 42,
+  "requestId": "uuid-for-correlation"
+}
+```
+
+### Response — Idempotent Hit (200)
+
+```json
+{
+  "success": true,
+  "message": "Returning existing transaction.",
+  "checkoutRequestId": "ws_CO_123456789",
+  "transactionId": 38,
+  "status": "PENDING"
+}
+```
+
+### Response — Rate Limited (429)
+
+```json
+{
+  "success": false,
+  "message": "Too many requests. Please try again later.",
+  "code": "RATE_LIMIT_EXCEEDED"
+}
+```
+
+**Rate Limits:** 5 req/min per IP, 2 req/min per phone number
+
+---
+
+## `POST /mpesa-callback`
+
+**Auth:** None (public — authenticated via IP allowlist + HMAC signature)  
+**Purpose:** Receives Safaricom payment result webhook  
+**Note:** This endpoint is only called by Safaricom, not by frontend code.
+
+### Request Body (from Safaricom)
+
+```json
+{
+  "Body": {
+    "stkCallback": {
+      "MerchantRequestID": "...",
+      "CheckoutRequestID": "ws_CO_...",
+      "ResultCode": 0,
+      "ResultDesc": "The service request is processed successfully.",
+      "CallbackMetadata": {
+        "Item": [
+          { "Name": "Amount", "Value": 1500 },
+          { "Name": "MpesaReceiptNumber", "Value": "QAB123XYZ" },
+          { "Name": "TransactionDate", "Value": 20260703095512 },
+          { "Name": "PhoneNumber", "Value": 254712345678 }
+        ]
+      }
+    }
+  }
+}
+```
+
+### Response (always returned to Safaricom)
+
+```json
+{ "ResultCode": 0, "ResultDesc": "Accepted" }
+```
+
+---
+
+## `POST /mpesa-query-status`
+
+**Auth:** Supabase anon key  
+**Purpose:** Query current payment status from Daraja API
+
+### Request Body
+
+```json
+{
+  "checkoutRequestId": "ws_CO_123456789"
+}
+```
+
+### Response
+
+```json
+{
+  "success": true,
+  "resultCode": "0",
+  "resultDesc": "The service request is processed successfully.",
+  "status": "completed"
+}
+```
+
+| `resultCode` | Meaning |
+|-------------|---------|
+| `"0"` | Payment succeeded |
+| `"1032"` | Cancelled by user |
+| `"1037"` | Timeout — user did not respond |
+| `"2001"` | Wrong PIN |
+
+**Rate Limit:** 30 req/min per IP
+
+---
+
+## `POST /mpesa-reconcile`
+
+**Auth:** `Authorization: Bearer <MPESA_RECONCILE_SECRET>`  
+**Purpose:** Background job — settles PENDING transactions older than 2 minutes
+
+### Response
+
+```json
+{
+  "success": true,
+  "message": "Reconciliation complete",
+  "settled": 2,
+  "failed": 1,
+  "stillPending": 0,
+  "errors": 0,
+  "duration": "1234ms"
+}
+```
+
+---
+
+## `GET /export-financial-data`
+
+**Auth:** Supabase user JWT (`Authorization: Bearer <user-access-token>`)  
+**Purpose:** Export financial transactions as CSV  
+**RBAC:** Admin role required
+
+### Query Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `dateRange` | `daily \| weekly \| monthly \| yearly` | `monthly` | Time period |
+| `category` | string | `all` | Filter by category (or `all`) |
+
+### Response — Success (200)
+
+```
+Content-Type: text/csv
+Content-Disposition: attachment; filename="financial-report-monthly-2026-07-03.csv"
+
+transaction_date,transaction_type,category,amount,description
+2026-07-03,revenue,food_orders,18.99,Order #42 completed
+2026-07-02,expense,utilities,1500.00,Electricity bill
+```
+
+Note: Amounts are in KES (divided by 100 from cents).
+
+### Response — Unauthorized (401)
+
+```json
+{ "error": "Unauthorized" }
+```
+
+### Response — Forbidden (403)
+
+```json
+{ "error": "Forbidden: admin role required" }
+```
+
+**Rate Limit:** 10 req/min per IP
+
+---
+
+## `POST /send-contact-email`
+
+**Auth:** None (public)  
+**Purpose:** Send contact form or reservation confirmation email
+
+### Request Body — Contact Form
+
+```json
+{
+  "type": "contact",
+  "name": "Jane Doe",
+  "email": "jane@example.com",
+  "phone": "0712345678",
+  "message": "I would like to make a large group reservation.",
+  "adminEmail": "admin@mlamibbq.com"
+}
+```
+
+### Request Body — Reservation
+
+```json
+{
+  "type": "reservation",
+  "name": "John Doe",
+  "email": "john@example.com",
+  "phone": "0712345678",
+  "guests": 6,
+  "date": "2026-08-15",
+  "time": "19:00",
+  "specialRequests": "Window table preferred",
+  "adminEmail": "admin@mlamibbq.com"
+}
+```
+
+### Response
+
+```json
+{ "emailSent": true, "id": "resend-email-id" }
+```
+
+Or if Resend not configured:
+```json
+{ "emailSent": false, "reason": "Email service not configured" }
+```
+
+Note: This function **always returns HTTP 200** even on email delivery failure, to prevent frontend errors.
+
+**Rate Limit:** 5 req/min per IP
+
+---
+
+## Error Response Format
+
+All functions use a consistent error envelope:
+
+```json
+{
+  "success": false,
+  "code": "ERROR_CODE",
+  "message": "Human-readable error message"
+}
+```
+
+### Common Error Codes
+
+| Code | HTTP | Description |
+|------|------|-------------|
+| `RATE_LIMIT_EXCEEDED` | 429 | Too many requests |
+| `MISSING_PARAMETERS` | 400 | Required fields absent from request body |
+| `INVALID_AMOUNT` | 400 | Payment amount outside KES 1–150,000 |
+| `INVALID_PHONE` | 400 | Not a valid Kenyan M-Pesa number |
+| `PRICE_MISMATCH` | 400 | Client amount ≠ server-verified amount |
+| `OUT_OF_STOCK` | 400 | One or more cart items unavailable |
+| `UNKNOWN_ITEMS` | 400 | Cart contains non-existent item IDs |
+| `AUTH_ERROR` | 500 | Daraja OAuth token fetch failed |
+| `STK_PUSH_ERROR` | 500 | Daraja API rejected the STK Push |
+| `UNEXPECTED_ERROR` | 500 | Unhandled exception |

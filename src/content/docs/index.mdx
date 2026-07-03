@@ -1,0 +1,64 @@
+---
+title: Mlami BBQ Platform Documentation
+description: Technical guides, system architecture, and operational workflows for the Mlami BBQ restaurant management platform.
+template: splash
+hero:
+  title: Mlami BBQ Documentation
+  tagline: A Comprehensive Guide to the platform.
+  actions:
+    - text: Read the Docs
+      link: /getting-started/overview/
+      icon: right-arrow
+      variant: primary
+    - text: System Architecture
+      link: /architecture/system/
+      icon: external
+      variant: minimal
+---
+
+import FeatureGrid from '../../components/ui/FeatureGrid';
+import MetricGrid from '../../components/ui/MetricGrid';
+import WorkflowSection from '../../components/ui/WorkflowSection';
+import SecurityChecklist from '../../components/ui/SecurityChecklist';
+import Timeline from '../../components/ui/Timeline';
+import QuoteBlock from '../../components/ui/QuoteBlock';
+import CalloutBox from '../../components/ui/CalloutBox';
+import SectionDivider from '../../components/ui/SectionDivider.astro';
+import ScreenshotPlaceholder from '../../components/placeholders/ScreenshotPlaceholder';
+import ArchitecturePlaceholder from '../../components/placeholders/ArchitecturePlaceholder.astro';
+
+
+
+<SectionDivider label="Roadmap" />
+
+## What's Shipping Next
+
+<Timeline client:load items={[
+  {
+    period: "High Priority",
+    title: "Live Order Tracking",
+    description: "A public /order/:id route allowing customers to monitor their ticket status in real time via secure, anonymous RLS policies.",
+    status: "planned",
+  },
+  {
+    period: "High Priority",
+    title: "E2E Testing Suite",
+    description: "Implementing Vitest for permission logic and Playwright for critical checkout and callback flows.",
+    status: "planned",
+  },
+  {
+    period: "Medium Priority",
+    title: "Menu Analytics Engine",
+    description: "Algorithmic 'Popular' badges based on revenue volume and order frequency, directly integrated into the admin dashboard.",
+    status: "planned"
+  },
+  {
+    period: "Long Term",
+    title: "Multi-Tenant Branch Support",
+    description: "Scaling the database schema with branch_id foreign keys to support multi-location franchise deployments.",
+    status: "planned"
+  }
+]} />
+
+Check out the complete [Development Roadmap](/roadmap/) for our full backlog.
+

@@ -1,0 +1,369 @@
+---
+title: "M-Pesa Payment System"
+description: "STK Push integration, callbacks, idempotency, and reconciliation."
+sidebar:
+  order: 2
+---
+
+
+## Overview
+
+Mlami BBQ integrates with **Safaricom's Daraja API** for M-Pesa Express (STK Push) payments. This allows customers to pay directly from their phone without a card or external payment app.
+
+The implementation is hardened for production with idempotency, atomic database operations, callback authentication, and a background reconciliation job.
+
+---
+
+## Architecture Overview
+
+```mermaid
+graph TB
+    subgraph "Frontend"
+        CS[mpesaService.ts<br/>initiateMpesaPayment()]
+    end
+
+    subgraph "Edge Functions"
+        EF1[mpesa-stk-push<br/>Initiates payment]
+        EF2[mpesa-callback<br/>Receives result]
+        EF3[mpesa-query-status<br/>Status polling]
+        EF4[mpesa-reconcile<br/>Background recovery]
+    end
+
+    subgraph "Database"
+        DB1[mpesa_transactions]
+        DB2[orders]
+        DB3[order_items]
+        RPC1[complete_mpesa_payment]
+        RPC2[fail_mpesa_payment]
+    end
+
+    subgraph "Safaricom"
+        D1[Daraja OAuth]
+        D2[STK Push API]
+        D3[STK Query API]
+        D4[Callback Delivery]
+    end
+
+    CS --> EF1
+    EF1 --> D1
+    EF1 --> D2
+    EF1 --> DB1
+    D4 --> EF2
+    EF2 --> RPC1
+    RPC1 --> DB1 & DB2 & DB3
+    CS --> EF3
+    EF3 --> D3
+    EF4 --> DB1
+    EF4 --> D3
+    EF4 --> RPC1 & RPC2
+```
+
+---
+
+## Edge Function: `mpesa-stk-push`
+
+**File:** `supabase/functions/mpesa-stk-push/index.ts`  
+**Purpose:** Validates the payment request, initiates STK Push via Daraja, records pending transaction.
+
+### Request
+
+```http
+POST /functions/v1/mpesa-stk-push
+Authorization: Bearer <anon-key>
+Content-Type: application/json
+
+{
+  "phoneNumber": "0712345678",
+  "amount": 1500,
+  "tableNumber": "3",
+  "items": [{ "id": 1, "name": "Brisket", "price": 1899, "quantity": 1 }],
+  "idempotencyKey": "uuid-v4"
+}
+```
+
+### Processing Pipeline
+
+```
+1. IP Rate Limit Check (5 req/min per IP)
+2. Request body parsing
+3. Idempotency lookup (find existing PENDING/COMPLETED for this key)
+4. Input validation (phone, amount, tableNumber required)
+5. Amount range check (KES 1 – 150,000)
+6. Server-side price validation:
+   a. Fetch authoritative prices from menu_items
+   b. Verify all items exist
+   c. Check in_stock for each item
+   d. Recompute total from DB prices
+   e. Reject if |clientAmount - serverAmount| > 1
+7. Phone normalization + validation (254XXXXXXXXX format)
+8. Phone Rate Limit Check (2 req/min per phone)
+9. Daraja OAuth token fetch
+10. STK Push request to Daraja
+11. INSERT mpesa_transactions (status=PENDING)
+12. Return {success, checkoutRequestId, transactionId}
+```
+
+### Response
+
+```json
+{
+  "success": true,
+  "message": "STK Push sent. Please check your phone to complete payment.",
+  "checkoutRequestId": "ws_CO_...",
+  "merchantRequestId": "...",
+  "transactionId": 42,
+  "requestId": "uuid"
+}
+```
+
+### Error Codes
+
+| Code | HTTP | Meaning |
+|------|------|---------|
+| `MISSING_CREDENTIALS` | 500 | M-Pesa API credentials not set |
+| `CONFIG_ERROR` | 500 | Missing service role key |
+| `INVALID_REQUEST` | 400 | Malformed JSON body |
+| `MISSING_PARAMETERS` | 400 | Required fields absent |
+| `INVALID_AMOUNT` | 400 | Amount outside KES 1–150,000 |
+| `PRICE_VALIDATION_ERROR` | 500 | DB error during price check |
+| `OUT_OF_STOCK` | 400 | Cart contains unavailable item |
+| `UNKNOWN_ITEMS` | 400 | Cart contains non-existent item ID |
+| `PRICE_MISMATCH` | 400 | Client amount ≠ server-computed amount |
+| `INVALID_PHONE` | 400 | Not a valid Kenyan M-Pesa number |
+| `RATE_LIMIT_EXCEEDED` | 429 | Too many requests |
+| `NETWORK_ERROR` | 500 | Network error reaching Daraja |
+| `AUTH_ERROR` | 500 | Daraja authentication failed |
+| `STK_PUSH_ERROR` | 500 | Daraja rejected STK Push |
+| `STK_PUSH_REJECTED` | 400 | Daraja returned non-zero ResponseCode |
+| `UNEXPECTED_ERROR` | 500 | Unhandled exception |
+
+### CORS Configuration
+
+The function only allows cross-origin requests from:
+- `https://mlamibbq.com`
+- `https://www.mlamibbq.com`
+
+---
+
+## Edge Function: `mpesa-callback`
+
+**File:** `supabase/functions/mpesa-callback/index.ts`  
+**Purpose:** Receives the asynchronous payment result from Safaricom and atomically completes or fails the transaction.
+
+### Security Layers
+
+| Layer | Mechanism |
+|-------|-----------|
+| HTTP Method | POST only (405 on others) |
+| Content-Type | Must be `application/json` |
+| IP Allowlist | Only Safaricom's 12 production IPs (production mode) |
+| HMAC Signature | `x-mpesa-signature` verified with `HMAC-SHA256` against `MPESA_CALLBACK_SECRET` |
+
+### Safaricom Callback Payload (ResultCode 0 = Success)
+
+```json
+{
+  "Body": {
+    "stkCallback": {
+      "MerchantRequestID": "...",
+      "CheckoutRequestID": "ws_CO_...",
+      "ResultCode": 0,
+      "ResultDesc": "The service request is processed successfully.",
+      "CallbackMetadata": {
+        "Item": [
+          { "Name": "Amount",             "Value": 1500 },
+          { "Name": "MpesaReceiptNumber", "Value": "QAB123XYZ" },
+          { "Name": "TransactionDate",    "Value": 20260703095512 },
+          { "Name": "PhoneNumber",        "Value": 254712345678 }
+        ]
+      }
+    }
+  }
+}
+```
+
+### Atomic Completion via RPC
+
+On `ResultCode === 0`:
+```typescript
+await supabase.rpc('complete_mpesa_payment', {
+  p_checkout_request_id: checkoutRequestID,
+  p_receipt_number:      mpesaReceiptNumber,
+  p_transaction_date:    transactionDate,
+  p_phone_number:        callbackPhone,
+  p_result_desc:         resultDesc,
+  p_raw_payload:         callbackData,  // Full payload stored for audit
+});
+```
+
+On `ResultCode !== 0`:
+```typescript
+await supabase.rpc('fail_mpesa_payment', {
+  p_checkout_request_id: checkoutRequestID,
+  p_result_desc:         resultDesc,
+  p_raw_payload:         callbackData,
+});
+```
+
+### Always Acknowledge
+
+The callback **always returns `{ResultCode: 0}`** to Safaricom, even during transient errors. This prevents Safaricom from retrying the callback indefinitely. The reconciliation job handles recovery for any payments that failed to process.
+
+---
+
+## Edge Function: `mpesa-query-status`
+
+**File:** `supabase/functions/mpesa-query-status/index.ts`  
+**Purpose:** Queries Daraja for the current status of an STK Push request. Used by the frontend when the user is waiting for payment confirmation.
+
+### When Used
+
+The `useMpesaTransaction` hook calls this function every few seconds after initiating STK Push, providing the user with live payment status feedback.
+
+---
+
+## Edge Function: `mpesa-reconcile`
+
+**File:** `supabase/functions/mpesa-reconcile/index.ts`  
+**Purpose:** Background job that finds PENDING transactions older than 2 minutes and queries Daraja to settle them.
+
+### Why It Exists
+
+Several scenarios can leave a transaction permanently stuck as PENDING:
+- Safaricom callback delayed or lost
+- Network error in `mpesa-callback` after STK Push sent
+- Supabase Edge Function cold start timeout
+
+The reconciler provides a safety net that ensures no successful payment goes unrecorded.
+
+### Invocation
+
+Triggered by POST request with `Authorization: Bearer <MPESA_RECONCILE_SECRET>`. Intended to be called by:
+- Supabase Cron (pg_cron) every 5 minutes
+- External scheduler (GitHub Actions cron job)
+
+### Algorithm
+
+```
+1. Fetch PENDING transactions older than 2 minutes (up to 20 per run)
+2. Authenticate with Daraja OAuth
+3. For each transaction:
+   a. Query /stkpushquery/v1/query
+   b. If ResponseCode=0 and ResultCode=0 → call complete_mpesa_payment()
+   c. If ResponseCode=0 and ResultCode≠0 → call fail_mpesa_payment()
+   d. Otherwise → leave as PENDING (Daraja still processing)
+4. Return summary: {settled, failed, stillPending, errors}
+```
+
+### Safety Limits
+
+- Maximum **20 transactions per run** to prevent overloading Daraja
+- **2-minute grace period** before attempting reconciliation (gives callback time to arrive)
+- **Rate limited** by Redis (5 requests/min to the function itself)
+
+---
+
+## Idempotency
+
+The system prevents duplicate charges through two mechanisms:
+
+### 1. Client-Side Idempotency Key
+
+The frontend generates a UUID v4 before initiating payment and passes it as `idempotencyKey`. If the same key is submitted again, the Edge Function returns the existing transaction without triggering a new STK Push.
+
+```typescript
+// src/services/mpesaService.ts
+const idempotencyKey = crypto.randomUUID();
+await initiateMpesaPayment({ ..., idempotencyKey });
+```
+
+### 2. Partial Unique Index
+
+```sql
+CREATE UNIQUE INDEX idx_mpesa_transactions_idempotency_active
+  ON mpesa_transactions (idempotency_key)
+  WHERE status IN ('PENDING', 'COMPLETED');
+```
+
+This allows the same key to be reused for a new attempt after a FAILED transaction, while preventing duplicate PENDING/COMPLETED entries.
+
+### 3. FOR UPDATE Lock in complete_mpesa_payment()
+
+The atomic RPC locks the transaction row before completing it:
+```sql
+SELECT * FROM mpesa_transactions 
+WHERE checkout_request_id = p_checkout_request_id FOR UPDATE;
+IF status = 'COMPLETED' THEN RETURN already_completed = true; END IF;
+```
+
+This handles duplicate Safaricom callbacks arriving simultaneously.
+
+---
+
+## Phone Number Formatting
+
+Both the frontend service and the Edge Function normalize phone numbers:
+
+```
+0712345678   → 254712345678
+712345678    → 254712345678
+254712345678 → 254712345678 (no change)
++254712345678 → 254712345678
+```
+
+Accepted prefixes after normalization: `2541XXXXXXXX` or `2547XXXXXXXX`.
+
+**Sources:**
+- Frontend: `src/services/mpesaService.ts:22-43`
+- Edge Function: `supabase/functions/mpesa-stk-push/index.ts:295-313`
+
+---
+
+## Environment Configuration
+
+| Variable | Where Set | Purpose |
+|----------|-----------|---------|
+| `MPESA_CONSUMER_KEY` | Supabase Vault | Daraja API consumer key |
+| `MPESA_CONSUMER_SECRET` | Supabase Vault | Daraja API consumer secret |
+| `MPESA_SHORTCODE` | Supabase Vault | Business short code (174379 for sandbox) |
+| `MPESA_PASSKEY` | Supabase Vault | Daraja passkey for password generation |
+| `MPESA_CALLBACK_URL` | Supabase Vault | Public URL of `mpesa-callback` function |
+| `MPESA_CALLBACK_SECRET` | Supabase Vault | HMAC secret for callback verification |
+| `MPESA_ENV` | Supabase Vault | `sandbox` or `production` |
+| `MPESA_RECONCILE_SECRET` | Supabase Vault | Auth token for reconcile function |
+
+**Daraja Environments:**
+- Sandbox: `https://sandbox.safaricom.co.ke` — for development/testing
+- Production: `https://api.safaricom.co.ke` — for live transactions
+
+**Note:** The `supabase/functions/.env` file currently contains sandbox credentials. **These are not production credentials.** Production credentials must be obtained from the Safaricom Developer Portal and stored in Supabase Secrets (never in Git).
+
+---
+
+## Structured Logging
+
+Every Edge Function uses a correlation ID (`requestId = crypto.randomUUID()`) and structured JSON logging:
+
+```json
+{
+  "level": "INFO",
+  "requestId": "abc-123",
+  "event": "stk_push_request_received",
+  "ts": "2026-07-03T06:50:00.000Z"
+}
+```
+
+Logs are searchable in the Supabase Dashboard under Functions → Logs.
+
+---
+
+## Failure Recovery Matrix
+
+| Failure Point | Recovery Mechanism |
+|--------------|-------------------|
+| Network timeout during STK Push | 15s client timeout; user retries with same idempotency key |
+| STK Push sent but DB insert fails | Error logged; reconciler finds transaction via Daraja query |
+| Callback missed by Safaricom | Reconciler queries Daraja every 5 min |
+| Callback processing error | Always ACKs to Safaricom; reconciler retries |
+| Duplicate callback | `FOR UPDATE` + idempotency check in `complete_mpesa_payment()` |
+| Duplicate client request | Idempotency key check returns existing transaction |

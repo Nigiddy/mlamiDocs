@@ -1,0 +1,302 @@
+---
+title: "Deployment Guide"
+description: "Step-by-step production deployment to Vercel and Supabase."
+sidebar:
+  order: 2
+---
+
+
+## Overview
+
+Mlami BBQ deploys the frontend as a static SPA on **Vercel** and uses **Supabase** for all backend services. There is no dedicated application server to manage.
+
+---
+
+## Requirements
+
+| Requirement | Version / Details |
+|-------------|------------------|
+| Node.js | ≥ 18.x |
+| npm | ≥ 9.x |
+| Supabase account | supabase.com |
+| Vercel account | vercel.com |
+| Upstash account | upstash.com (for rate limiting) |
+| Safaricom Developer account | developer.safaricom.co.ke |
+| Resend account | resend.com (optional, for emails) |
+| Sentry account | sentry.io (optional, for error tracking) |
+
+---
+
+## Step 1: Clone and Install
+
+```bash
+git clone <repo-url>
+cd mlamiBBQ
+npm install
+```
+
+---
+
+## Step 2: Create Supabase Project
+
+1. Go to [supabase.com](https://supabase.com) → New Project
+2. Choose a region close to Kenya (e.g., **US East** or **EU West** — no African region as of 2026)
+3. Note your **Project URL** and **anon key** from Settings → API
+
+---
+
+## Step 3: Run Database Migrations
+
+Run migrations in order using the **Supabase SQL Editor** (Dashboard → SQL Editor):
+
+```bash
+# Using Supabase CLI (recommended for repeatable deployments)
+supabase link --project-ref YOUR_PROJECT_REF
+supabase db push
+```
+
+Or run each migration file manually in the SQL editor in order:
+
+1. `20250408_initial_schema.sql`
+2. `20250409_mpesa_transactions.sql`
+3. `20251024043831_..._user_roles.sql`
+4. `20251208055539_..._reservations.sql`
+5. `20251208055728_..._profiles.sql`
+6. `20260117042445_..._profiles.sql`
+7. `20260117045422_..._profiles.sql`
+8. `20260301080000_fix_reservation_rls_date.sql`
+9. `20260301_remove_date_check_final.sql`
+10. `20260303120000_create_light_orders_rpc.sql`
+11. `20260311_fix_admin_update_rpc.sql`
+12. `20260311_fix_reservations_update_rls.sql`
+13. `20260311_mpesa_hardening.sql`
+14. `20260522_add_profiles_admin_rls_and_auth_trigger.sql`
+15. `20260613_financial_module_baseline.sql`
+16. `20260616_rbac_fixes.sql`
+17. `20260624_add_mpesa_idempotency_key.sql`
+18. `20260624_fix_customer_phone_unique.sql`
+19. `20260624_stats_rpc_and_bulk_inserts.sql`
+20. `20260625_critical_concurrency_and_standardization.sql`
+21. `add_waiter_role.sql` (STEP A first, then STEP B)
+
+> ⚠️ **`add_waiter_role.sql` must be run in two steps.** Run the `ALTER TYPE` statement first, commit it, then run the rest of the file. This is due to a PostgreSQL restriction (error `55P04`) that prevents using newly added enum values in the same transaction.
+
+---
+
+## Step 4: Enable Realtime
+
+In Supabase Dashboard → Database → Replication:
+- Enable Realtime on the `orders` table
+- Set Replica Identity to `FULL` (to receive old and new values on updates)
+
+---
+
+## Step 5: Configure Supabase Storage
+
+1. Create a **public bucket** named `menu-images`
+2. Add a policy to allow anyone to read: `SELECT: USING (true)`
+3. Add a policy to allow admins to write: `INSERT/UPDATE/DELETE: USING (has_role(auth.uid(), 'admin'))`
+
+---
+
+## Step 6: Deploy Edge Functions
+
+```bash
+# Link your project (if not already done)
+supabase link --project-ref YOUR_PROJECT_REF
+
+# Deploy all functions
+supabase functions deploy mpesa-stk-push
+supabase functions deploy mpesa-callback
+supabase functions deploy mpesa-query-status
+supabase functions deploy mpesa-reconcile
+supabase functions deploy export-financial-data
+supabase functions deploy send-contact-email
+```
+
+---
+
+## Step 7: Configure Edge Function Secrets
+
+In Supabase Dashboard → Settings → Edge Functions → Secrets:
+
+```
+SUPABASE_SERVICE_ROLE_KEY   = <your service role key>
+MPESA_CONSUMER_KEY          = <from Safaricom Developer Portal>
+MPESA_CONSUMER_SECRET       = <from Safaricom Developer Portal>
+MPESA_SHORTCODE             = <your shortcode>
+MPESA_PASSKEY               = <from Safaricom>
+MPESA_CALLBACK_URL          = https://YOUR_PROJECT.supabase.co/functions/v1/mpesa-callback
+MPESA_CALLBACK_SECRET       = <generated with: openssl rand -hex 32>
+MPESA_ENV                   = production
+MPESA_RECONCILE_SECRET      = <generated with: openssl rand -hex 32>
+UPSTASH_REDIS_REST_URL      = https://YOUR_INSTANCE.upstash.io
+UPSTASH_REDIS_REST_TOKEN    = <your upstash token>
+RATE_LIMIT_STK_IP           = 5
+RATE_LIMIT_STK_PHONE        = 2
+RATE_LIMIT_QUERY            = 30
+RATE_LIMIT_EMAIL            = 5
+RATE_LIMIT_ADMIN            = 10
+RESEND_API_KEY              = <your resend API key>
+```
+
+---
+
+## Step 8: Set Up Upstash Redis
+
+1. Go to [upstash.com](https://upstash.com) → Create Database
+2. Choose **Redis**
+3. Select a region (any — latency from Supabase Edge is low)
+4. Copy the **REST URL** and **REST Token** to Supabase secrets
+
+---
+
+## Step 9: Create First Admin User
+
+1. In Supabase Dashboard → Authentication → Users → Invite user (use your email)
+2. Accept the invitation email and set your password
+3. In Supabase SQL Editor, run:
+   ```sql
+   SELECT public.set_user_as_admin('your-email@example.com');
+   ```
+4. Verify: `SELECT * FROM public.user_roles WHERE role = 'admin';`
+
+---
+
+## Step 10: Deploy to Vercel
+
+### Option A: Vercel CLI
+
+```bash
+npm install -g vercel
+vercel login
+vercel deploy --prod
+```
+
+### Option B: Vercel Dashboard
+
+1. Import the GitHub repository in Vercel
+2. Set environment variables (see Step 11)
+3. Deploy
+
+---
+
+## Step 11: Set Vercel Environment Variables
+
+In Vercel Dashboard → Project → Settings → Environment Variables:
+
+```
+VITE_SUPABASE_URL       = https://YOUR_PROJECT.supabase.co
+VITE_SUPABASE_ANON_KEY  = <your anon key>
+VITE_SENTRY_DSN         = <optional>
+VITE_APP_URL            = https://your-domain.com
+```
+
+> ⚠️ **After adding variables, you must trigger a new deployment** for them to take effect (Vite bakes them at build time).
+
+---
+
+## Step 12: Configure Custom Domain (Optional)
+
+1. In Vercel → Domains → Add domain
+2. Follow DNS configuration instructions
+3. SSL certificate is provisioned automatically
+
+---
+
+## Step 13: Configure Reconciliation Cron Job
+
+The `mpesa-reconcile` function should be triggered every 5 minutes. Options:
+
+### Option A: Supabase pg_cron (Recommended)
+
+In SQL Editor:
+```sql
+SELECT cron.schedule(
+  'mpesa-reconcile-job',
+  '*/5 * * * *',  -- every 5 minutes
+  $$
+  SELECT net.http_post(
+    url := 'https://YOUR_PROJECT.supabase.co/functions/v1/mpesa-reconcile',
+    headers := '{"Authorization": "Bearer YOUR_RECONCILE_SECRET", "Content-Type": "application/json"}'::jsonb,
+    body := '{}'::jsonb
+  ) AS request_id;
+  $$
+);
+```
+
+### Option B: GitHub Actions
+
+Create `.github/workflows/reconcile.yml`:
+```yaml
+name: M-Pesa Reconcile
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          curl -X POST \
+            -H "Authorization: Bearer ${{ secrets.MPESA_RECONCILE_SECRET }}" \
+            https://YOUR_PROJECT.supabase.co/functions/v1/mpesa-reconcile
+```
+
+---
+
+## Step 14: Post-Deployment Verification
+
+### Frontend Checks
+- [ ] Home page loads without console errors
+- [ ] Menu page displays items from database
+- [ ] Login works with admin credentials
+- [ ] Admin dashboard shows stats
+- [ ] Kitchen dashboard shows empty orders
+
+### M-Pesa Checks (Sandbox)
+- [ ] Payment form accepts phone numbers
+- [ ] STK Push returns success response (check Supabase → Functions → Logs)
+- [ ] Transaction appears in `mpesa_transactions` with PENDING status
+- [ ] Simulate callback via Daraja sandbox → transaction updates to COMPLETED
+- [ ] Order appears in kitchen dashboard
+
+### Realtime Checks
+- [ ] Open kitchen dashboard in browser
+- [ ] Create a test order via SQL: `INSERT INTO orders (...)` 
+- [ ] Verify order card appears without refreshing
+
+### Rate Limiting Checks
+- [ ] Send 6+ payment requests quickly → verify 429 response on 6th
+- [ ] Check Supabase Functions logs for rate limit warning
+
+---
+
+## Docker Deployment (Self-Hosted Alternative)
+
+For self-hosted environments, a `Dockerfile` is included:
+
+```bash
+docker build -t mlamibbq .
+docker run -p 80:80 \
+  -e VITE_SUPABASE_URL=... \
+  -e VITE_SUPABASE_ANON_KEY=... \
+  mlamibbq
+```
+
+The included `nginx.conf` handles SPA routing (all routes return `index.html`) and sets cache headers.
+
+---
+
+## Going Live with M-Pesa (Production)
+
+1. Complete Safaricom's **Go-Live** process at developer.safaricom.co.ke
+2. Obtain production Consumer Key, Consumer Secret, Shortcode, and Passkey
+3. Update Supabase secrets:
+   - `MPESA_ENV=production`
+   - `MPESA_CONSUMER_KEY=<production key>`
+   - `MPESA_CONSUMER_SECRET=<production secret>`
+   - `MPESA_SHORTCODE=<production shortcode>`
+   - `MPESA_PASSKEY=<production passkey>`
+4. Register `MPESA_CALLBACK_URL` with Safaricom in production
+5. Test with a real Kenyan M-Pesa number (small amount, KES 1)

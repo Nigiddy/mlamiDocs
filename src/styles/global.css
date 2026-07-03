@@ -1,0 +1,517 @@
+/* ============================================================
+   MLAMI BBQ — DOCUMENTATION DESIGN SYSTEM
+   Premium, warm, BBQ-adjacent without being kitsch.
+   Inspired by Stripe, Linear, and Vercel docs.
+   ============================================================ */
+
+/* ── Google Fonts already loaded via astro.config.mjs head ── */
+
+/* ============================================================
+   1. STARLIGHT COLOR OVERRIDES — DARK MODE (default)
+   ============================================================ */
+:root {
+  /* Accent: warm amber — like glowing coals */
+  --sl-color-accent-low:  hsl(28, 55%, 18%);
+  --sl-color-accent:      hsl(28, 72%, 46%);
+  --sl-color-accent-high: hsl(32, 90%, 68%);
+
+  /* Whites / text */
+  --sl-color-white:       hsl(30, 12%, 96%);
+
+  /* Gray scale — warm neutrals, not cold */
+  --sl-color-gray-1:      hsl(24, 8%, 92%);
+  --sl-color-gray-2:      hsl(24, 6%, 78%);
+  --sl-color-gray-3:      hsl(24, 5%, 58%);
+  --sl-color-gray-4:      hsl(24, 5%, 36%);
+  --sl-color-gray-5:      hsl(24, 5%, 22%);
+  --sl-color-gray-6:      hsl(24, 5%, 14%);
+  --sl-color-black:       hsl(24, 6%, 8%);
+
+  /* Typography */
+  --sl-font:              'Inter', system-ui, sans-serif;
+  --sl-font-mono:         'JetBrains Mono', 'Fira Code', monospace;
+
+  /* Text sizes */
+  --sl-text-xs:   0.75rem;
+  --sl-text-sm:   0.875rem;
+  --sl-text-base: 1rem;
+  --sl-text-lg:   1.125rem;
+  --sl-text-xl:   1.25rem;
+  --sl-text-2xl:  1.5rem;
+  --sl-text-3xl:  1.875rem;
+  --sl-text-4xl:  2.25rem;
+  --sl-text-5xl:  3rem;
+
+  /* Sidebar width */
+  --sl-sidebar-width: 17rem;
+
+  /* Content width */
+  --sl-content-width: 52rem;
+
+  /* Border radius tokens */
+  --mlami-radius-sm:   4px;
+  --mlami-radius-md:   8px;
+  --mlami-radius-lg:   12px;
+  --mlami-radius-xl:   16px;
+  --mlami-radius-full: 9999px;
+
+  /* Shadow tokens */
+  --mlami-shadow-sm:  0 1px 3px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.3);
+  --mlami-shadow-md:  0 4px 12px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.3);
+  --mlami-shadow-lg:  0 8px 32px rgba(0,0,0,0.6), 0 4px 12px rgba(0,0,0,0.4);
+  --mlami-shadow-glow: 0 0 24px hsla(28, 72%, 46%, 0.25);
+
+  /* Spacing */
+  --mlami-space-1:  4px;
+  --mlami-space-2:  8px;
+  --mlami-space-3:  12px;
+  --mlami-space-4:  16px;
+  --mlami-space-6:  24px;
+  --mlami-space-8:  32px;
+  --mlami-space-12: 48px;
+  --mlami-space-16: 64px;
+}
+
+/* Light mode overrides */
+:root[data-theme='light'] {
+  --sl-color-accent-low:  hsl(28, 60%, 90%);
+  --sl-color-accent:      hsl(28, 72%, 40%);
+  --sl-color-accent-high: hsl(28, 60%, 28%);
+  --sl-color-gray-1:      hsl(24, 5%, 12%);
+  --sl-color-gray-2:      hsl(24, 5%, 28%);
+  --sl-color-gray-3:      hsl(24, 5%, 44%);
+  --sl-color-gray-4:      hsl(24, 5%, 62%);
+  --sl-color-gray-5:      hsl(24, 5%, 80%);
+  --sl-color-gray-6:      hsl(24, 6%, 92%);
+  --sl-color-black:       hsl(24, 4%, 98%);
+}
+
+/* ============================================================
+   2. TYPOGRAPHY
+   ============================================================ */
+h1, h2, h3 {
+  font-family: 'DM Serif Display', Georgia, serif;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+h4, h5, h6 {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* Page title */
+.sl-markdown-content h1:first-child {
+  font-size: var(--sl-text-4xl);
+  background: linear-gradient(135deg, var(--sl-color-white) 0%, var(--sl-color-gray-2) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: var(--mlami-space-8);
+}
+
+/* Section headings */
+.sl-markdown-content h2 {
+  font-size: var(--sl-text-2xl);
+  margin-top: var(--mlami-space-12);
+  padding-bottom: var(--mlami-space-3);
+  border-bottom: 1px solid var(--sl-color-gray-5);
+}
+
+.sl-markdown-content h3 {
+  font-size: var(--sl-text-xl);
+  margin-top: var(--mlami-space-8);
+}
+
+/* Lead paragraph */
+.sl-markdown-content > p:first-of-type {
+  font-size: var(--sl-text-lg);
+  color: var(--sl-color-gray-2);
+  line-height: 1.75;
+}
+
+/* Body text */
+.sl-markdown-content p {
+  line-height: 1.75;
+  color: var(--sl-color-gray-2);
+}
+
+/* ============================================================
+   3. LINKS
+   ============================================================ */
+.sl-markdown-content a:not(.not-content) {
+  color: var(--sl-color-accent-high);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.sl-markdown-content a:not(.not-content):hover {
+  color: var(--sl-color-white);
+  border-bottom-color: var(--sl-color-accent);
+}
+
+/* ============================================================
+   4. CODE BLOCKS
+   ============================================================ */
+.sl-markdown-content code:not(pre code) {
+  background: var(--sl-color-gray-6);
+  border: 1px solid var(--sl-color-gray-5);
+  border-radius: var(--mlami-radius-sm);
+  padding: 0.15em 0.4em;
+  font-family: var(--sl-font-mono);
+  font-size: 0.85em;
+  color: var(--sl-color-accent-high);
+}
+
+.sl-markdown-content pre {
+  border: 1px solid var(--sl-color-gray-5);
+  border-radius: var(--mlami-radius-lg);
+  box-shadow: var(--mlami-shadow-md);
+  margin: var(--mlami-space-6) 0;
+}
+
+/* ============================================================
+   5. TABLES
+   ============================================================ */
+.sl-markdown-content table {
+  width: 100%;
+  border-collapse: collapse;
+  border-radius: var(--mlami-radius-lg);
+  overflow: hidden;
+  box-shadow: var(--mlami-shadow-sm);
+  margin: var(--mlami-space-6) 0;
+  font-size: var(--sl-text-sm);
+}
+
+.sl-markdown-content thead {
+  background: var(--sl-color-gray-6);
+}
+
+.sl-markdown-content th {
+  padding: var(--mlami-space-3) var(--mlami-space-4);
+  text-align: left;
+  font-weight: 600;
+  color: var(--sl-color-gray-2);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.75rem;
+  border-bottom: 1px solid var(--sl-color-gray-5);
+}
+
+.sl-markdown-content td {
+  padding: var(--mlami-space-3) var(--mlami-space-4);
+  border-bottom: 1px solid var(--sl-color-gray-6);
+  color: var(--sl-color-gray-2);
+  vertical-align: top;
+}
+
+.sl-markdown-content tr:last-child td {
+  border-bottom: none;
+}
+
+.sl-markdown-content tbody tr:hover {
+  background: hsla(28, 10%, 50%, 0.05);
+}
+
+/* ============================================================
+   6. BLOCKQUOTES
+   ============================================================ */
+.sl-markdown-content blockquote {
+  border-left: 3px solid var(--sl-color-accent);
+  background: hsla(28, 30%, 40%, 0.08);
+  border-radius: 0 var(--mlami-radius-md) var(--mlami-radius-md) 0;
+  padding: var(--mlami-space-4) var(--mlami-space-6);
+  margin: var(--mlami-space-6) 0;
+  color: var(--sl-color-gray-2);
+  font-style: normal;
+}
+
+.sl-markdown-content blockquote p {
+  margin: 0;
+}
+
+/* ============================================================
+   7. LISTS
+   ============================================================ */
+.sl-markdown-content ul li::marker {
+  color: var(--sl-color-accent);
+}
+
+.sl-markdown-content ol li::marker {
+  color: var(--sl-color-accent);
+  font-weight: 600;
+}
+
+.sl-markdown-content li {
+  padding-left: var(--mlami-space-1);
+  margin-bottom: var(--mlami-space-2);
+  line-height: 1.7;
+  color: var(--sl-color-gray-2);
+}
+
+/* ============================================================
+   8. SIDEBAR
+   ============================================================ */
+.sidebar-pane {
+  background: var(--sl-color-black) !important;
+  border-right: 1px solid var(--sl-color-gray-6);
+}
+
+/* Sidebar group labels */
+nav[aria-label="Main"] .group-label span {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--sl-color-gray-3);
+}
+
+/* Sidebar items */
+nav[aria-label="Main"] a {
+  border-radius: var(--mlami-radius-md);
+  transition: background 0.15s ease, color 0.15s ease;
+  font-size: 0.875rem;
+}
+
+nav[aria-label="Main"] a:hover {
+  background: hsla(28, 30%, 50%, 0.1);
+  color: var(--sl-color-white);
+}
+
+nav[aria-label="Main"] a[aria-current="page"] {
+  background: hsla(28, 72%, 46%, 0.15);
+  color: var(--sl-color-accent-high);
+  border-left: 2px solid var(--sl-color-accent);
+}
+
+/* ============================================================
+   9. HEADER / SITE HEADER
+   ============================================================ */
+header.header {
+  background: hsla(24, 6%, 8%, 0.85) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--sl-color-gray-6);
+}
+
+/* ============================================================
+   10. SEARCH
+   ============================================================ */
+site-search button[data-open-modal] {
+  border-radius: var(--mlami-radius-md);
+  border: 1px solid var(--sl-color-gray-5);
+  background: var(--sl-color-gray-6);
+  transition: border-color 0.15s ease;
+}
+
+site-search button[data-open-modal]:hover {
+  border-color: var(--sl-color-accent);
+}
+
+/* ============================================================
+   11. HERO (Starlight default hero override)
+   ============================================================ */
+.hero {
+  padding: var(--mlami-space-16) 0 var(--mlami-space-12);
+}
+
+.hero .tagline {
+  font-size: var(--sl-text-lg);
+  color: var(--sl-color-gray-2);
+  max-width: 40rem;
+  line-height: 1.75;
+}
+
+/* ============================================================
+   12. PAGINATION
+   ============================================================ */
+.pagination-links a {
+  border-radius: var(--mlami-radius-md);
+  border: 1px solid var(--sl-color-gray-5);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.pagination-links a:hover {
+  border-color: var(--sl-color-accent);
+  background: hsla(28, 72%, 46%, 0.08);
+}
+
+/* ============================================================
+   13. CALLOUT / ASIDE (Starlight built-in)
+   ============================================================ */
+.starlight-aside {
+  border-radius: var(--mlami-radius-lg);
+  border-width: 1px;
+}
+
+/* ============================================================
+   14. RIGHT TABLE OF CONTENTS
+   ============================================================ */
+starlight-toc nav a {
+  font-size: var(--sl-text-xs);
+  color: var(--sl-color-gray-3);
+  transition: color 0.15s ease;
+  border-left: 2px solid transparent;
+  padding-left: 0.75rem;
+}
+
+starlight-toc nav a:hover,
+starlight-toc nav a[aria-current="true"] {
+  color: var(--sl-color-accent-high);
+  border-left-color: var(--sl-color-accent);
+}
+
+/* ============================================================
+   15. BREADCRUMBS
+   ============================================================ */
+.breadcrumbs a {
+  color: var(--sl-color-gray-3);
+  transition: color 0.15s ease;
+}
+
+.breadcrumbs a:hover {
+  color: var(--sl-color-accent-high);
+}
+
+/* ============================================================
+   16. MLAMI COMPONENT DESIGN TOKENS
+   (used by React components in src/components/)
+   ============================================================ */
+:root {
+  /* Feature cards */
+  --card-bg:           hsla(24, 5%, 12%, 0.8);
+  --card-border:       var(--sl-color-gray-5);
+  --card-border-hover: var(--sl-color-accent);
+  --card-radius:       var(--mlami-radius-xl);
+
+  /* Metric cards */
+  --metric-accent:     var(--sl-color-accent-high);
+  --metric-bg:         hsla(28, 30%, 20%, 0.15);
+
+  /* Placeholder components */
+  --placeholder-bg:    hsla(24, 5%, 14%, 0.6);
+  --placeholder-border: var(--sl-color-gray-5);
+  --placeholder-text:  var(--sl-color-gray-3);
+
+  /* Timeline */
+  --timeline-line:     var(--sl-color-gray-5);
+  --timeline-node:     var(--sl-color-accent);
+
+  /* Security checklist */
+  --check-color:       hsl(142, 60%, 45%);
+  --check-bg:          hsla(142, 60%, 45%, 0.1);
+}
+
+/* ============================================================
+   17. SCROLLBAR STYLING
+   ============================================================ */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--sl-color-gray-5);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--sl-color-gray-4); }
+
+/* ============================================================
+   18. SELECTION
+   ============================================================ */
+::selection {
+  background: hsla(28, 72%, 46%, 0.3);
+  color: var(--sl-color-white);
+}
+
+/* ============================================================
+   19. FOCUS RING
+   ============================================================ */
+:focus-visible {
+  outline: 2px solid var(--sl-color-accent);
+  outline-offset: 2px;
+  border-radius: var(--mlami-radius-sm);
+}
+
+/* ============================================================
+   20. RESPONSIVE
+   ============================================================ */
+@media (max-width: 72rem) {
+  .sl-markdown-content h1:first-child {
+    font-size: var(--sl-text-3xl);
+  }
+}
+
+@media (max-width: 50rem) {
+  .sl-markdown-content h1:first-child {
+    font-size: var(--sl-text-2xl);
+  }
+  .sl-markdown-content pre {
+    border-radius: var(--mlami-radius-md);
+  }
+}
+
+/* ============================================================
+   21. RESPONSIVE GRID OVERRIDES (for MDX component grids)
+   ============================================================ */
+@media (max-width: 60rem) {
+  .mlami-feature-grid--3col {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  .mlami-metric-grid--4col {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 36rem) {
+  .mlami-feature-grid--3col,
+  .mlami-feature-grid--2col,
+  .mlami-metric-grid--4col,
+  .mlami-metric-grid--3col,
+  .mlami-metric-grid--2col {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ============================================================
+   22. HOMEPAGE SPLASH ENHANCEMENTS
+   ============================================================ */
+/* Hero section on splash pages */
+[data-has-hero] .hero {
+  background: radial-gradient(ellipse 80% 60% at 50% -10%, hsla(28, 60%, 30%, 0.25) 0%, transparent 70%);
+  border-bottom: 1px solid var(--sl-color-gray-6);
+  padding-block: 4rem;
+}
+
+[data-has-hero] .hero h1 {
+  font-family: 'DM Serif Display', serif;
+  font-size: clamp(2rem, 5vw, 3.5rem);
+  font-weight: 400;
+  letter-spacing: -0.03em;
+  background: linear-gradient(135deg, var(--sl-color-white) 30%, var(--sl-color-accent-high) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Hero action buttons */
+[data-has-hero] .hero .action-primary {
+  background: linear-gradient(135deg, var(--sl-color-accent), var(--sl-color-accent-high)) !important;
+  border: none !important;
+  color: white !important;
+  font-weight: 600;
+  border-radius: var(--mlami-radius-md) !important;
+  transition: opacity 0.15s ease, transform 0.15s ease !important;
+}
+
+[data-has-hero] .hero .action-primary:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+/* ============================================================
+   23. CONTENT AREA SPACING ON SPLASH
+   ============================================================ */
+.sl-markdown-content {
+  padding-block-end: 4rem;
+}

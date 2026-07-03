@@ -1,0 +1,386 @@
+---
+title: "Database"
+description: "Tables, RPCs, triggers, RLS policies, and migrations."
+sidebar:
+  order: 4
+---
+
+
+## Overview
+
+The database is **PostgreSQL 15+** hosted on Supabase. All tables have Row-Level Security (RLS) enabled. The schema has evolved through 22 migration files.
+
+Monetary values are stored in **integer cents** (smallest currency unit). `1000` = KES 10.00. Prices in API responses and export functions are divided by 100 before display.
+
+---
+
+## Tables
+
+### `categories`
+**Purpose:** Menu categories for grouping menu items.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | SERIAL | PK | Auto-incrementing identifier |
+| `name` | TEXT | NOT NULL | Category name (e.g., "BBQ Specialties") |
+| `description` | TEXT | nullable | Optional description |
+| `created_at` | TIMESTAMPTZ | DEFAULT now() | Creation timestamp |
+
+**RLS Policies:**
+- `SELECT`: Anyone (public read)
+- `INSERT/UPDATE/DELETE`: Authenticated users with `admin` role via `has_role()`
+
+**Source:** `20250408_initial_schema.sql`
+
+---
+
+### `menu_items`
+**Purpose:** The restaurant's menu — individual dishes with prices and availability.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | SERIAL | PK | Auto-incrementing identifier |
+| `name` | TEXT | NOT NULL | Dish name |
+| `description` | TEXT | nullable | Dish description |
+| `price` | INTEGER | NOT NULL | Price in cents (KES) |
+| `image_url` | TEXT | nullable | Supabase Storage URL |
+| `category_id` | INTEGER | FK → categories.id | Category association |
+| `in_stock` | BOOLEAN | DEFAULT true | Whether dish is available |
+| `created_at` | TIMESTAMPTZ | DEFAULT now() | |
+| `updated_at` | TIMESTAMPTZ | DEFAULT now() | |
+
+**RLS Policies:**
+- `SELECT`: Anyone (public read)
+- `INSERT/UPDATE`: Authenticated admin only
+- `DELETE`: Authenticated admin only
+
+**Critical:** The `in_stock` field is server-side validated in `mpesa-stk-push`. Orders containing out-of-stock items are rejected before payment.
+
+**Source:** `20250408_initial_schema.sql`
+
+---
+
+### `tables`
+**Purpose:** Restaurant table registry — table numbers and occupancy status.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | SERIAL | PK | |
+| `table_number` | TEXT | UNIQUE, NOT NULL | Human-readable table identifier |
+| `is_occupied` | BOOLEAN | DEFAULT false | Current occupancy status |
+| `created_at` | TIMESTAMPTZ | DEFAULT now() | |
+
+**Used By:** `orders.table_number` FK references this. QR code generator reads table list.
+
+**Source:** `20250408_initial_schema.sql`
+
+---
+
+### `customers`
+**Purpose:** Customer registry built automatically from phone numbers.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | SERIAL | PK | |
+| `name` | TEXT | nullable | Customer name (from checkout form) |
+| `phone` | TEXT | UNIQUE (after fix migration) | Kenyan format: 254XXXXXXXXX |
+| `email` | TEXT | UNIQUE | Optional email |
+| `created_at` | TIMESTAMPTZ | DEFAULT now() | |
+
+**How Created:** Automatically created or updated by `create_order()` RPC using `ON CONFLICT (phone) DO UPDATE`.
+
+**Important:** The `UNIQUE` constraint on `phone` was added in migration `20260624_fix_customer_phone_unique.sql` to fix a race condition where concurrent payments from the same phone could create duplicate customer records.
+
+**Source:** `20250408_initial_schema.sql`, `20260624_fix_customer_phone_unique.sql`
+
+---
+
+### `orders`
+**Purpose:** Order records, created atomically when M-Pesa payment succeeds.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | SERIAL | PK | |
+| `customer_id` | INTEGER | FK → customers.id | Customer who placed order |
+| `table_number` | TEXT | FK → tables.table_number | Table identifier |
+| `status` | TEXT | NOT NULL, DEFAULT 'Pending' | Order lifecycle status |
+| `subtotal` | INTEGER | NOT NULL | Sum of item prices (cents) |
+| `total` | INTEGER | NOT NULL | Final total (cents) |
+| `payment_status` | TEXT | DEFAULT 'Pending' | Payment state |
+| `payment_method` | TEXT | nullable | 'mpesa', 'cash', etc. |
+| `notes` | TEXT | nullable | Special instructions |
+| `created_at` | TIMESTAMPTZ | DEFAULT now() | |
+| `updated_at` | TIMESTAMPTZ | DEFAULT now() | Updated by trigger |
+
+**Status Values:** `Pending`, `Preparing`, `Ready`, `Completed`, `Cancelled`
+
+> ⚠️ **Important:** Status uses PascalCase (not lowercase). This was standardized in migration `20260625`. The `record_order_revenue()` trigger checks for `'Completed'` (capitalized) to fire.
+
+**Indexes:**
+- `idx_orders_status` (on status for filtering)
+- `idx_orders_created_at` (DESC for recent-first queries)
+
+**Trigger:** `trg_record_order_revenue` — fires `AFTER UPDATE` when status changes to `'Completed'`, inserts a revenue record into `financial_transactions`.
+
+**RLS Policies:**
+- `SELECT`: Authenticated (admin/cook see all; waiter sees all via policy)
+- `INSERT/UPDATE`: Via RPC only (`create_order`, `update_order_status`)
+- Admin can update via the `update_order_status` RPC
+
+**Source:** `20250408_initial_schema.sql`, `20260625_critical_concurrency_and_standardization.sql`
+
+---
+
+### `order_items`
+**Purpose:** Line items belonging to an order.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | SERIAL | PK | |
+| `order_id` | INTEGER | FK → orders.id, NOT NULL | Parent order |
+| `menu_item_id` | INTEGER | FK → menu_items.id, NOT NULL | What was ordered |
+| `quantity` | INTEGER | NOT NULL, DEFAULT 1 | How many |
+| `price` | INTEGER | NOT NULL | Price at time of order (cents) — snapshot |
+| `notes` | TEXT | nullable | Special preparation notes |
+| `created_at` | TIMESTAMPTZ | DEFAULT now() | |
+
+**Design Decision:** `price` is snapshotted at order time, not read from `menu_items`. This means price changes don't retroactively affect completed orders.
+
+**Performance:** Order items are bulk-inserted in a single SQL statement in `create_order()` (via `INSERT INTO ... SELECT FROM jsonb_array_elements()`).
+
+**Source:** `20250408_initial_schema.sql`, `20260624_stats_rpc_and_bulk_inserts.sql`
+
+---
+
+### `mpesa_transactions`
+**Purpose:** Full audit log of every M-Pesa payment attempt.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | SERIAL | PK | |
+| `phone_number` | TEXT | NOT NULL | Payer phone in 254XXXXXXXXX format |
+| `amount` | INTEGER | NOT NULL | Amount charged (cents) |
+| `table_number` | TEXT | nullable | Table reference |
+| `checkout_request_id` | TEXT | NOT NULL | Daraja CheckoutRequestID |
+| `merchant_request_id` | TEXT | NOT NULL | Daraja MerchantRequestID |
+| `mpesa_receipt_number` | TEXT | nullable | Safaricom receipt (on success) |
+| `transaction_date` | TIMESTAMPTZ | nullable | When Safaricom processed it |
+| `result_description` | TEXT | nullable | Daraja result message |
+| `status` | TEXT | CHECK constraint | `PENDING`, `COMPLETED`, `FAILED`, `CANCELLED` |
+| `items` | JSONB | nullable | Snapshot of cart items |
+| `order_id` | INTEGER | FK → orders.id | Linked order (on COMPLETED) |
+| `raw_callback_payload` | JSONB | nullable | Full Safaricom callback payload |
+| `cancelled_at` | TIMESTAMPTZ | nullable | |
+| `idempotency_key` | TEXT | Partial UNIQUE INDEX | Client-generated dedup key |
+| `created_at` | TIMESTAMPTZ | DEFAULT now() | |
+| `updated_at` | TIMESTAMPTZ | Auto-updated by trigger | |
+
+**Idempotency Index:** `UNIQUE (idempotency_key) WHERE status IN ('PENDING', 'COMPLETED')` — allows the same key to be reused after a FAILED transaction.
+
+**Auto-update trigger:** `handle_updated_at` using `extensions.moddatetime`.
+
+**Indexes:**
+- `idx_mpesa_transactions_phone_number`
+- `idx_mpesa_transactions_status`
+- `idx_mpesa_transactions_created_at DESC`
+- `idx_mpesa_transactions_order_id WHERE order_id IS NOT NULL`
+
+**Source:** `20250409_mpesa_transactions.sql`, `20260311_mpesa_hardening.sql`, `20260624_add_mpesa_idempotency_key.sql`, `20260625_critical_concurrency_and_standardization.sql`
+
+---
+
+### `user_roles`
+**Purpose:** Maps authenticated users to their application roles. Supports multiple roles per user.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | UUID | PK, DEFAULT gen_random_uuid() | |
+| `user_id` | UUID | FK → auth.users.id, NOT NULL | Supabase Auth user |
+| `role` | app_role | NOT NULL | `admin`, `cook`, `waiter`, or `user` |
+| `created_at` | TIMESTAMPTZ | DEFAULT now() | |
+
+**Unique Constraint:** `UNIQUE (user_id, role)` — a user cannot have the same role twice.
+
+**Enum:** `app_role` — PostgreSQL custom enum: `'admin' | 'cook' | 'waiter' | 'user'`
+
+**Source:** `20251024_..._user_roles.sql`, `add_waiter_role.sql`
+
+---
+
+### `profiles`
+**Purpose:** Extended user profile data, auto-populated on user creation.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | UUID | FK → auth.users.id (PK) |
+| `email` | TEXT | User email |
+| `full_name` | TEXT | Display name |
+| `avatar_url` | TEXT | Profile image |
+| `created_at` | TIMESTAMPTZ | |
+
+**Source:** `20251208_..._profiles.sql`
+
+---
+
+### `financial_transactions`
+**Purpose:** Unified ledger of all financial events (revenue, expenses, refunds).
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | SERIAL | PK | |
+| `transaction_date` | DATE | NOT NULL | Business date |
+| `transaction_type` | TEXT | CHECK: `revenue`, `expense`, `refund` | |
+| `category` | TEXT | NOT NULL | `food_orders`, `beverages`, etc. |
+| `amount` | INTEGER | NOT NULL | In cents |
+| `description` | TEXT | nullable | Human-readable description |
+| `order_id` | INTEGER | FK → orders.id | For M-Pesa order revenue |
+| `recorded_by` | UUID | FK → auth.users.id | Who recorded it |
+| `recorded_by_name` | TEXT | | Display name for audit trail |
+| `created_at` | TIMESTAMPTZ | DEFAULT now() | |
+| `updated_at` | TIMESTAMPTZ | | |
+
+**Indexes:** `idx_financial_transactions_date DESC`, `idx_financial_transactions_type`
+
+**How Records Are Created:**
+1. **M-Pesa orders:** `trg_record_order_revenue` trigger fires when `orders.status = 'Completed'`
+2. **Manual sales:** `trg_record_manual_sale` trigger fires on INSERT into `manual_sales`
+3. **Refunds:** `trg_record_refund` trigger fires on INSERT into `refunds`
+4. **Expenses:** Direct INSERT by admin via `ExpenseForm.tsx`
+
+**Source:** `20260613_financial_module_baseline.sql`
+
+---
+
+### `manual_sales`
+**Purpose:** Records cash/card/bank sales that bypass M-Pesa.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | SERIAL | PK | |
+| `amount` | INTEGER | NOT NULL | In cents |
+| `payment_method` | TEXT | CHECK | `cash`, `card`, `bank_transfer`, `mpesa_manual` |
+| `order_type` | TEXT | CHECK | `dine_in`, `takeaway`, `delivery` |
+| `category` | TEXT | DEFAULT `food_orders` | Chart grouping |
+| `notes` | TEXT | nullable | |
+| `recorded_by` | UUID | FK → auth.users.id, NOT NULL | Who recorded (for audit) |
+| `recorded_by_name` | TEXT | NOT NULL | Display name for audit trail |
+| `sale_date` | DATE | DEFAULT CURRENT_DATE | |
+| `created_at` | TIMESTAMPTZ | | |
+
+**RLS:** Admin = full access. Waiter = INSERT own rows + SELECT own rows. Cook = SELECT all (for stats).
+
+**Source:** `20260613_financial_module_baseline.sql`, `add_waiter_role.sql`, `20260616_rbac_fixes.sql`
+
+---
+
+### `refunds`
+**Purpose:** Records refunds issued against previous sales.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | SERIAL PK | |
+| `original_sale_ref` | TEXT | M-Pesa receipt or order # |
+| `refund_amount` | INTEGER | In cents |
+| `reason` | TEXT | Required justification |
+| `processed_by` | UUID | Who processed the refund |
+| `processed_by_name` | TEXT | Audit trail display name |
+| `refund_date` | DATE | |
+| `created_at` | TIMESTAMPTZ | |
+
+**Source:** `20260613_financial_module_baseline.sql`
+
+---
+
+### `reservations`
+**Purpose:** Table reservation requests submitted through the website.
+
+**RLS:** Anon can INSERT. Admin-only SELECT.
+
+**Source:** `20251208_..._reservations.sql`
+
+---
+
+### `contact_messages`
+**Purpose:** Customer contact form submissions.
+
+**RLS:** Anon can INSERT. Admin-only SELECT.
+
+**Source:** `20251208_..._contact_messages.sql`
+
+---
+
+## RPCs (Database Functions)
+
+### `create_order(p_customer_name, p_customer_phone, p_table_number, p_items)`
+- **Returns:** `INTEGER` (order ID)
+- **Purpose:** Atomically creates customer, order, and order items in a single transaction
+- **Security:** `SECURITY DEFINER` — runs as the function owner, bypassing RLS
+- **Performance:** Uses single bulk INSERT for order_items (migration `20260624`)
+- **Called by:** `complete_mpesa_payment()` RPC
+
+### `update_order_status(p_order_id, p_status)`
+- **Returns:** `BOOLEAN`
+- **Purpose:** Updates order status, triggers revenue recording trigger
+- **Called by:** Kitchen dashboard, admin orders table
+
+### `complete_mpesa_payment(p_checkout_request_id, p_receipt_number, p_transaction_date, p_phone_number, p_result_desc, p_raw_payload)`
+- **Returns:** `JSONB` — `{already_completed: boolean, order_id: integer}`
+- **Purpose:** Atomic, idempotent payment completion. Locks transaction row with `FOR UPDATE`, checks idempotency, creates order, updates transaction.
+- **Called by:** `mpesa-callback` Edge Function (on success), `mpesa-reconcile` Edge Function
+
+### `fail_mpesa_payment(p_checkout_request_id, p_result_desc, p_raw_payload)`
+- **Returns:** `BOOLEAN`
+- **Purpose:** Atomically marks a transaction as FAILED. Idempotent — returns false if already in terminal state.
+- **Called by:** `mpesa-callback` (on failure), `mpesa-reconcile`
+
+### `has_role(_user_id, _role)`
+- **Returns:** `BOOLEAN`
+- **Purpose:** Stable, security-definer role check function used in all RLS policies
+- **Called by:** All RLS policies, `export-financial-data` Edge Function
+
+### `get_dashboard_stats()`
+- **Returns:** `JSONB`
+- **Purpose:** Single server-side aggregation query returning all KPI stats (active orders, today's completions, revenue, trends). Replaces multiple frontend queries with one efficient DB call.
+- **Called by:** `useStatsCardSummary` hook
+
+### `set_user_as_admin(user_email)`
+- **Purpose:** Utility function to promote a user to admin by email
+- **Called by:** Admin user management workflow
+
+### `handle_new_user()`
+- **Type:** Trigger function
+- **Purpose:** Fires on `auth.users` INSERT to create profile and assign default role
+
+---
+
+## Triggers
+
+| Trigger | Table | Event | Function |
+|---------|-------|-------|----------|
+| `trg_record_order_revenue` | `orders` | AFTER UPDATE | `record_order_revenue()` — inserts revenue on Completed |
+| `trg_record_manual_sale` | `manual_sales` | AFTER INSERT | `record_manual_sale_revenue()` — inserts revenue entry |
+| `trg_record_refund` | `refunds` | AFTER INSERT | `record_refund_transaction()` — inserts refund entry |
+| `handle_updated_at` | `mpesa_transactions` | BEFORE UPDATE | `extensions.moddatetime(updated_at)` |
+| `on_auth_user_created` | `auth.users` | AFTER INSERT | `handle_new_user()` |
+
+---
+
+## Migration History
+
+| Migration | Date | Purpose |
+|-----------|------|---------|
+| `20250408_initial_schema.sql` | Apr 2025 | Core tables, RPCs, basic RLS |
+| `20250409_mpesa_transactions.sql` | Apr 2025 | M-Pesa transaction table |
+| `20251024_..._user_roles.sql` | Oct 2025 | `app_role` enum, `user_roles` table, `has_role()` |
+| `20251208_..._reservations.sql` | Dec 2025 | Reservations, contact messages |
+| `20260117_..._profiles.sql` | Jan 2026 | Profile improvements |
+| `20260303_..._light_orders_rpc.sql` | Mar 2026 | Lightweight orders RPC for kitchen |
+| `20260311_mpesa_hardening.sql` | Mar 2026 | Atomic RPCs, HMAC, IP allowlist, idempotency |
+| `20260522_..._profiles_admin_rls.sql` | May 2026 | Profile admin policies + auth trigger |
+| `20260613_financial_module_baseline.sql` | Jun 2026 | `financial_transactions`, `manual_sales`, `refunds`, triggers |
+| `20260616_rbac_fixes.sql` | Jun 2026 | Waiter/cook RLS fixes |
+| `20260624_add_mpesa_idempotency_key.sql` | Jun 2026 | Idempotency key column |
+| `20260624_fix_customer_phone_unique.sql` | Jun 2026 | Phone UNIQUE constraint + concurrency fix |
+| `20260624_stats_rpc_and_bulk_inserts.sql` | Jun 2026 | `get_dashboard_stats()` RPC, bulk order items insert |
+| `20260625_critical_concurrency.sql` | Jun 2026 | Partial unique index, status PascalCase standardization |
+| `add_waiter_role.sql` | 2026 | Adds `waiter` to `app_role` enum, waiter RLS policies |

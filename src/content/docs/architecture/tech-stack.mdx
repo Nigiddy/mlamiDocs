@@ -1,0 +1,250 @@
+---
+title: "Technology Stack"
+description: "Every framework, library, and tool used in Mlami BBQ."
+sidebar:
+  order: 2
+---
+
+
+Every technology used in Mlami BBQ is documented here with its purpose and why it was chosen.
+
+---
+
+## Frontend
+
+### React 18
+- **Package:** `react@^18.3.1`, `react-dom@^18.3.1`
+- **Why:** Industry standard for building component-based SPAs. v18 brings `Suspense`-based lazy loading, `useTransition`, and concurrent rendering — all used in this project.
+- **Where:** Entire frontend application (`src/`)
+
+### TypeScript 5.5
+- **Package:** `typescript@^5.5.3`
+- **Why:** Provides compile-time type safety, catches bugs before runtime, and makes the codebase self-documenting. All `.tsx` and `.ts` files are fully typed.
+- **Where:** Entire codebase
+
+### Vite 7 + SWC
+- **Package:** `vite@^7.3.3`, `@vitejs/plugin-react-swc@^3.5.0`
+- **Why:** Dramatically faster HMR and build times compared to webpack. SWC (Rust-based transpiler) replaces Babel for 10-20× faster builds.
+- **Where:** Build tooling (`vite.config.ts`)
+
+### React Router DOM v6
+- **Package:** `react-router-dom@^6.26.2`
+- **Why:** The standard client-side routing library for React. v6 offers declarative `Routes`/`Route` nesting and the `future` flags used here for v7 compatibility.
+- **Where:** `src/App.tsx` — all route definitions
+
+### TanStack React Query v5
+- **Package:** `@tanstack/react-query@^5.56.2`
+- **Why:** Server-state management library. Handles caching, background refetching, loading/error states, and cache invalidation. Replaces the need for Redux or Context for data fetching.
+- **Key config:** `staleTime: 5 minutes`, `retry: 3` with exponential backoff
+- **Where:** All data-fetching hooks (`src/hooks/use*.ts`)
+
+### Tailwind CSS 3.4
+- **Package:** `tailwindcss@^3.4.11`
+- **Why:** Utility-first CSS framework that enables rapid UI development with consistent design tokens. Used together with `tailwind-merge` and `clsx` for conditional class management.
+- **Where:** All component files, `tailwind.config.ts`
+
+### shadcn/ui + Radix UI
+- **Package:** All `@radix-ui/react-*` packages
+- **Why:** Unstyled, accessible, headless UI primitives (Dialog, Dropdown, Select, Toast, etc.). shadcn/ui provides pre-composed versions styled with Tailwind. This gives full design control with zero accessibility compromises.
+- **Where:** `src/components/ui/` — all UI primitive components
+
+### Framer Motion 12
+- **Package:** `framer-motion@^12.23.24`
+- **Why:** Production-grade animation library for React. Used for page transitions, staggered card entrances, and micro-interactions throughout the admin dashboard.
+- **Where:** `FinancialDashboard.tsx`, `StatsCards.tsx`, admin views
+
+### Recharts
+- **Package:** `recharts@^2.12.7`
+- **Why:** Composable charting library built on React and SVG. Used for revenue/expense charts in the Financial Dashboard.
+- **Where:** `src/components/admin/financial/FinancialCharts.tsx`
+
+### React Hook Form + Zod
+- **Packages:** `react-hook-form@^7.53.0`, `zod@^3.23.8`, `@hookform/resolvers@^3.9.0`
+- **Why:** Performance-optimized form handling with schema-based validation. Zod schemas are the single source of truth for form validation rules.
+- **Where:** Contact form, reservation form, login form, admin forms
+
+### Lucide React
+- **Package:** `lucide-react@^0.462.0`
+- **Why:** Consistent, tree-shakeable icon library. Over 1000 icons available.
+- **Where:** Used throughout for all UI icons
+
+### Sonner
+- **Package:** `sonner@^1.5.0`
+- **Why:** Lightweight, beautiful toast notification library. Used alongside the Radix Toast for different notification contexts.
+- **Where:** Financial Dashboard exports, form submissions
+
+### jsPDF + jsPDF AutoTable
+- **Packages:** `jspdf@^4.2.1`, `jspdf-autotable@^5.0.2`
+- **Why:** Client-side PDF generation. Used for financial report exports without needing a server.
+- **Where:** `src/utils/pdfExport.ts`
+
+### QRCode React
+- **Package:** `qrcode.react@^3.1.0`
+- **Why:** Generates QR codes in the browser for table codes that customers scan to identify their table during payment.
+- **Where:** `src/components/admin/QRCodeGenerator.tsx`
+
+### date-fns 3
+- **Package:** `date-fns@^3.6.0`
+- **Why:** Lightweight date manipulation library. Used for date filtering and formatting throughout the application.
+- **Where:** Financial data hooks, reservation handling
+
+### Embla Carousel
+- **Package:** `embla-carousel-react@^8.5.2`
+- **Why:** Lightweight, performant touch-enabled carousel. Used in the hero section.
+- **Where:** `src/components/Hero.tsx`
+
+---
+
+## Backend
+
+### Supabase
+- **Package:** `@supabase/supabase-js@^2.49.8`
+- **Why:** Provides the entire backend stack — PostgreSQL, Auth, Storage, Realtime, and Edge Functions — as a managed platform. Eliminates the need for a separate Node.js server, dramatically reducing operational complexity.
+- **Where:** `src/integrations/supabase/client.ts` — singleton client used everywhere
+
+### PostgreSQL (via Supabase)
+- **Why:** Production-grade relational database. Used for all persistent data storage. Benefits from native support for JSONB, advisory locks, SECURITY DEFINER functions, and Postgres CDC for Realtime.
+- **Where:** All data tables, RPCs, triggers, and policies
+
+### Supabase Edge Functions (Deno)
+- **Why:** Serverless Deno runtime at the edge. Provides TypeScript-native compute without cold-start penalties. Used for M-Pesa integration (which requires server-side secrets) and data export.
+- **Where:** `supabase/functions/`
+
+### Row-Level Security (RLS)
+- **Why:** Database-level authorization. Even if application code is compromised, the database enforces access controls independently. Every table has RLS enabled.
+- **Where:** All migration files defining `CREATE POLICY` statements
+
+---
+
+## Authentication
+
+### Supabase Auth (JWT)
+- **Why:** Managed authentication service with support for email/password, social login, and magic links. Issues JWTs that are automatically included in Supabase client requests.
+- **Where:** `src/contexts/auth/useAuthProvider.tsx`
+
+---
+
+## Payments
+
+### Safaricom Daraja API (M-Pesa STK Push)
+- **Why:** M-Pesa is the dominant mobile payment platform in Kenya. STK Push allows customers to approve payments with a PIN on their phone — no card required, no app download.
+- **Where:** `supabase/functions/mpesa-stk-push/`, `supabase/functions/mpesa-callback/`
+
+### Idempotency Keys (client-generated UUID)
+- **Why:** Prevents double-charging if the network fails and the customer retries. The key is stored in `mpesa_transactions.idempotency_key` with a partial unique index on PENDING/COMPLETED rows.
+- **Where:** `src/services/mpesaService.ts:9`, `supabase/functions/mpesa-stk-push/index.ts:155-181`
+
+---
+
+## Realtime
+
+### Supabase Realtime (WebSocket + Postgres CDC)
+- **Why:** Postgres Change Data Capture broadcasts row-level INSERT/UPDATE/DELETE events over WebSocket in real-time. Kitchen staff see new orders appear instantly without polling.
+- **Where:** `src/hooks/useKitchenRealtime.ts`
+
+---
+
+## Rate Limiting
+
+### Upstash Redis + @upstash/ratelimit
+- **Packages:** `@upstash/redis@1.28.4`, `@upstash/ratelimit@1.1.3` (via esm.sh in Deno)
+- **Why:** Distributed Redis-based rate limiting that works across Edge Function instances. In-memory rate limiting doesn't work with stateless serverless functions as each invocation is isolated.
+- **Algorithm:** Sliding Window
+- **Where:** `supabase/functions/_shared/rateLimiter.ts`
+
+---
+
+## Email
+
+### Resend
+- **Why:** Modern email delivery API with generous free tier. Used for contact form and reservation confirmation emails.
+- **Where:** `supabase/functions/send-contact-email/index.ts`
+
+---
+
+## Error Tracking
+
+### Sentry
+- **Package:** `@sentry/react@^10.38.0`
+- **Why:** Production error monitoring with stack traces, breadcrumbs, and performance tracing. Configured with a 10% trace sample rate to limit performance impact.
+- **Where:** `src/main.tsx:7-15`
+
+---
+
+## Analytics
+
+### Vercel Analytics
+- **Package:** `@vercel/analytics@^1.6.1`
+- **Why:** Privacy-preserving page view and web vitals tracking. Integrates directly with Vercel without a separate service setup.
+- **Where:** `src/App.tsx:168` — `<Analytics />` component
+
+---
+
+## PWA
+
+### vite-plugin-pwa (Workbox)
+- **Package:** `vite-plugin-pwa@^1.2.0`
+- **Why:** Transforms the SPA into an installable Progressive Web App with offline support. Uses `autoUpdate` mode so service workers are refreshed transparently.
+- **Key config:**
+  - `skipWaiting: true` and `clientsClaim: true` — forces new SW immediately
+  - `navigateFallbackDenylist` — prevents SW from intercepting Supabase API calls
+  - `CacheFirst` strategy for Supabase Storage images (30-day cache)
+- **Where:** `vite.config.ts:18-75`
+
+---
+
+## Compression
+
+### vite-plugin-compression2
+- **Package:** `vite-plugin-compression2@^2.4.0`
+- **Why:** Emits pre-compressed `.gz` and `.br` (Brotli) versions of all static assets at build time. Vercel serves the pre-compressed version automatically, reducing transfer sizes by 60-80%.
+- **Where:** `vite.config.ts:16-17`
+
+---
+
+## Image Processing
+
+### Sharp (dev dependency)
+- **Package:** `sharp@^0.35.0`
+- **Why:** High-performance image processing for optimizing images in the build pipeline.
+- **Where:** Dev tooling
+
+---
+
+## Code Quality
+
+### ESLint 9 + TypeScript ESLint
+- **Packages:** `eslint@^9.9.0`, `typescript-eslint@^8.0.1`
+- **Config:** `eslint.config.js`
+- **Plugins:** `eslint-plugin-react-hooks`, `eslint-plugin-react-refresh`
+
+### PostCSS + Autoprefixer
+- **Packages:** `postcss@^8.4.47`, `autoprefixer@^10.4.20`
+- **Why:** Automatically adds CSS vendor prefixes for cross-browser compatibility.
+
+---
+
+## Summary Table
+
+| Category | Technology | Version |
+|----------|-----------|---------|
+| UI Framework | React | 18.3 |
+| Language | TypeScript | 5.5 |
+| Build Tool | Vite + SWC | 7.3 |
+| Routing | React Router | 6.26 |
+| Server State | React Query | 5.56 |
+| Styling | Tailwind CSS | 3.4 |
+| UI Components | Radix UI / shadcn | Latest |
+| Animations | Framer Motion | 12.x |
+| Charts | Recharts | 2.12 |
+| Forms | React Hook Form + Zod | 7.x / 3.x |
+| Backend | Supabase | 2.49 |
+| Database | PostgreSQL | 15+ |
+| Serverless | Deno Edge Functions | 1.x |
+| Payments | Safaricom Daraja (M-Pesa) | v1 |
+| Rate Limiting | Upstash Redis | 1.28 |
+| Email | Resend | REST |
+| Error Tracking | Sentry | 10.x |
+| Analytics | Vercel Analytics | 1.6 |
+| PWA | Workbox (via vite-plugin-pwa) | 7.x |
+| Deployment | Vercel | Latest |

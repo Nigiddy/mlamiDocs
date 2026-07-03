@@ -1,0 +1,43 @@
+---
+// ArchitectureSection.astro — wrapper for architecture diagram sections
+interface Props {
+  title?: string;
+  caption?: string;
+}
+const { title, caption } = Astro.props;
+---
+<div class="arch-section">
+  {title && <h3 class="arch-title">{title}</h3>}
+  <div class="arch-content">
+    <slot />
+  </div>
+  {caption && <p class="arch-caption">{caption}</p>}
+</div>
+
+<style>
+.arch-section {
+  margin: 2rem 0;
+}
+.arch-title {
+  font-family: 'DM Serif Display', serif;
+  font-weight: 400;
+  font-size: 1.4rem;
+  color: var(--sl-color-white);
+  margin-bottom: 1rem;
+  letter-spacing: -0.02em;
+}
+.arch-content {
+  background: var(--card-bg);
+  border: 1px solid var(--sl-color-gray-5);
+  border-radius: var(--mlami-radius-xl);
+  padding: 1.5rem;
+  overflow-x: auto;
+}
+.arch-caption {
+  font-size: 0.8rem;
+  color: var(--sl-color-gray-3);
+  text-align: center;
+  margin-top: 0.75rem;
+  font-style: italic;
+}
+</style>
