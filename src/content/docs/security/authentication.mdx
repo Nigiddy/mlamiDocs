@@ -14,32 +14,6 @@ Authentication is handled entirely by **Supabase Auth** using email/password. Ro
 2. **Component-level view control** (`Admin.tsx` `useEffect` guard)
 3. **Database RLS policies** (enforced by PostgreSQL regardless of frontend code)
 
----
-
-## Authentication Flow
-
-```mermaid
-sequenceDiagram
-    actor Staff
-    participant FE as React Frontend
-    participant SA as Supabase Auth
-    participant DB as PostgreSQL user_roles
-
-    Staff->>FE: Navigates to /admin
-    FE->>FE: ProtectedRoute checks isLoading + roleChecked
-    FE->>FE: user is null → redirect to /login
-
-    Staff->>FE: Submits email + password
-    FE->>SA: supabase.auth.signInWithPassword()
-    SA-->>FE: {session, user} via JWT
-    FE->>FE: onAuthStateChange fires → setUser(user)
-    FE->>DB: SELECT role FROM user_roles WHERE user_id = user.id
-    DB-->>FE: ['admin'] / ['cook'] / ['waiter']
-    FE->>FE: setIsAdmin(true) / setIsCook(true) / setIsWaiter(true)
-    FE->>FE: setRoleChecked(true)
-    FE->>FE: ProtectedRoute allows entry → /admin renders
-```
-
 **Source:** `src/contexts/auth/useAuthProvider.tsx`
 
 ---

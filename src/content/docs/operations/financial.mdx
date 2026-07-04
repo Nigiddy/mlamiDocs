@@ -33,36 +33,6 @@ All amounts are stored as **integer cents** and displayed as `KES X.XX`.
 
 ---
 
-## Architecture
-
-```mermaid
-graph TB
-    subgraph "Revenue Sources"
-        MPESA[M-Pesa Order Completed<br/>orders.status = 'Completed']
-        MANUAL[Manual Sale Recorded<br/>manual_sales INSERT]
-    end
-
-    subgraph "Expense Sources"
-        EXP[Admin records expense<br/>ExpenseForm]
-    end
-
-    subgraph "Refunds"
-        REF[Admin processes refund<br/>RefundModal]
-    end
-
-    MPESA -->|trg_record_order_revenue trigger| FT
-    MANUAL -->|trg_record_manual_sale trigger| FT
-    EXP -->|Direct INSERT| FT
-    REF -->|trg_record_refund trigger| FT
-
-    FT[financial_transactions<br/>Unified Ledger]
-
-    FT --> FD[FinancialDashboard<br/>KPI Cards + Charts]
-    FT --> EX[Data Exports<br/>CSV · PDF · JSON]
-```
-
----
-
 ## Database Tables
 
 ### `financial_transactions` — The Ledger
