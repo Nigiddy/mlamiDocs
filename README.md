@@ -1,1 +1,1 @@
-A Comprehensive Guide to [mlami.com.](https://mlami-demo.vercel.app/)
+A Comprehensive Guide to [mlami.com.](https://mlami.live/)
